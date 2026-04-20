@@ -1,0 +1,52 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/var/www/html
+      - /var/www/html/vendor
+    environment:
+      - APP_ENV=local
+      - APP_DEBUG=true
+      - APP_KEY=${APP_KEY:-base64:your-app-key-here}
+      - APP_URL=http://localhost:8000
+      - DB_CONNECTION=pgsql
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_DATABASE=builtox
+      - DB_USERNAME=builtox
+      - DB_PASSWORD=builtox_dev_password
+      - LOG_CHANNEL=stderr
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - builtox
+
+  db:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=builtox
+      - POSTGRES_USER=builtox
+      - POSTGRES_PASSWORD=builtox_dev_password
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U builtox -d builtox"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - builtox
+
+volumes:
+  db_data:
+
+networks:
+  builtox:
+    driver: bridge
