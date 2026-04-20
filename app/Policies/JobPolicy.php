@@ -20,7 +20,7 @@ class JobPolicy
      */
     public function view(User $user, Job $job): bool
     {
-        return $user->can('view:jobs');
+        return $user->can('view:jobs') && $user->canAccessOrganization($job->organization_id);
     }
 
     /**
@@ -36,7 +36,7 @@ class JobPolicy
      */
     public function update(User $user, Job $job): bool
     {
-        return $user->can('edit:jobs');
+        return $user->can('edit:jobs') && $user->canAccessOrganization($job->organization_id);
     }
 
     /**
@@ -44,7 +44,7 @@ class JobPolicy
      */
     public function delete(User $user, Job $job): bool
     {
-        return $user->can('delete:jobs');
+        return $user->can('delete:jobs') && $user->canAccessOrganization($job->organization_id);
     }
 
     /**
@@ -52,7 +52,7 @@ class JobPolicy
      */
     public function restore(User $user, Job $job): bool
     {
-        return $user->can('restore:jobs');
+        return $user->can('restore:jobs') && $user->canAccessOrganization($job->organization_id);
     }
 
     /**
@@ -60,9 +60,6 @@ class JobPolicy
      */
     public function forceDelete(User $user, Job $job): bool
     {
-        return $user->can('destroy:jobs');
+        return $user->can('destroy:jobs') && $user->canAccessOrganization($job->organization_id);
     }
 }
-
-
-

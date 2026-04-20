@@ -25,7 +25,7 @@ class OrganizationPolicy
             return true;
         }
 
-        return $user->can('view:organizations');
+        return $user->can('view:organizations') && $user->canAccessOrganization($organization);
     }
 
     /**
@@ -33,7 +33,7 @@ class OrganizationPolicy
      */
     public function create(User $user): bool
     {
-        return $user->can('create:organizations');
+        return $user->can('create:organizations') && $user->hasSystemAccess();
     }
 
     /**
@@ -41,7 +41,7 @@ class OrganizationPolicy
      */
     public function update(User $user, Organization $organization): bool
     {
-        return $user->can('edit:organizations');
+        return $user->can('edit:organizations') && $user->canAccessOrganization($organization);
     }
 
     /**
@@ -49,12 +49,12 @@ class OrganizationPolicy
      */
     public function delete(User $user, Organization $organization): bool
     {
-        // Prevent deleting Built Ox org (ID 1)
-        if ($organization->id === 1) {
+        // The global Built Ox org anchors system access and cannot be removed.
+        if ($organization->isGlobal()) {
             return false;
         }
 
-        return $user->can('delete:organizations');
+        return $user->can('delete:organizations') && $user->hasSystemAccess();
     }
 
     /**
@@ -62,7 +62,7 @@ class OrganizationPolicy
      */
     public function restore(User $user, Organization $organization): bool
     {
-        return $user->can('restore:organizations');
+        return $user->can('restore:organizations') && $user->hasSystemAccess();
     }
 
     /**
@@ -70,14 +70,11 @@ class OrganizationPolicy
      */
     public function forceDelete(User $user, Organization $organization): bool
     {
-        // Prevent force deleting Built Ox org
-        if ($organization->id === 1) {
+        // The global Built Ox org anchors system access and cannot be removed.
+        if ($organization->isGlobal()) {
             return false;
         }
 
-        return $user->can('destroy:organizations');
+        return $user->can('destroy:organizations') && $user->hasSystemAccess();
     }
 }
-
-
-

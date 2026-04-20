@@ -23,11 +23,12 @@ class UserSeeder extends Seeder
         // SYSTEM USERS (Built Ox Internal)
         // =================================================================
 
-        // Create Built Ox organization first (ID 1)
-        $builtOx = Organization::firstOrCreate(
+        // Create the global Built Ox organization that anchors system users.
+        // The app must not depend on this being ID 1; tenancy checks use type and permissions.
+        $builtOx = Organization::updateOrCreate(
             ['name' => 'Built Ox'],
             [
-                'type' => OrganizationType::Internal,
+                'type' => OrganizationType::Global,
                 'email' => 'admin@builtox.com',
                 'phone' => $phoneService->formatToE164('4803091250'),
                 'phone_country_code' => 'US',

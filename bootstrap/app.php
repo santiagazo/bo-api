@@ -19,6 +19,10 @@ return Application::configure(basePath: dirname(__DIR__))
             \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
         ]);
 
+        $middleware->alias([
+            'tenant.organization' => \App\Http\Middleware\ResolveTenantOrganization::class,
+        ]);
+
         // Trust proxies (for load balancers, App Runner, etc.)
         $middleware->trustProxies(
             at: '*',

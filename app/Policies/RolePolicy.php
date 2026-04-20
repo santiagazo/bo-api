@@ -2,6 +2,7 @@
 
 namespace App\Policies;
 
+use App\Enums\RoleType;
 use App\Models\Role;
 use App\Models\User;
 
@@ -20,7 +21,7 @@ class RolePolicy
      */
     public function view(User $user, Role $role): bool
     {
-        return $user->can('view:roles');
+        return $user->can('view:roles') && $this->withinTenant($user, $role);
     }
 
     /**
@@ -36,7 +37,7 @@ class RolePolicy
      */
     public function update(User $user, Role $role): bool
     {
-        return $user->can('edit:roles');
+        return $user->can('edit:roles') && $this->canModifyWithinTenant($user, $role);
     }
 
     /**
@@ -44,7 +45,7 @@ class RolePolicy
      */
     public function delete(User $user, Role $role): bool
     {
-        return $user->can('delete:roles');
+        return $user->can('delete:roles') && $this->canModifyWithinTenant($user, $role);
     }
 
     /**
@@ -52,7 +53,7 @@ class RolePolicy
      */
     public function restore(User $user, Role $role): bool
     {
-        return $user->can('restore:roles');
+        return $user->can('restore:roles') && $this->canModifyWithinTenant($user, $role);
     }
 
     /**
@@ -60,9 +61,24 @@ class RolePolicy
      */
     public function forceDelete(User $user, Role $role): bool
     {
-        return $user->can('destroy:roles');
+        return $user->can('destroy:roles') && $this->canModifyWithinTenant($user, $role);
+    }
+
+    protected function withinTenant(User $user, Role $role): bool
+    {
+        if ($role->organization_id === null) {
+            return $user->hasSystemAccess() || $role->type === RoleType::Organization;
+        }
+
+        return $user->canAccessOrganization($role->organization_id);
+    }
+
+    protected function canModifyWithinTenant(User $user, Role $role): bool
+    {
+        if ($role->organization_id === null) {
+            return $user->hasSystemAccess();
+        }
+
+        return $user->canAccessOrganization($role->organization_id);
     }
 }
-
-
-

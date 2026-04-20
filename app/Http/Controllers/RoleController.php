@@ -4,8 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Enums\RoleType;
 use App\Http\Resources\RoleResource;
-use App\Models\Permission;
 use App\Models\Role;
+use App\Support\TenantContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -30,16 +30,22 @@ class RoleController extends Controller
             $query->where('type', $request->type);
         }
 
-        // Filter by organization (for org-specific roles)
-        if ($request->has('organization_id')) {
-            $query->where('organization_id', $request->organization_id);
-        }
+        $tenantOrganizationId = app(TenantContext::class)->organizationId();
+        $query->where(function ($query) use ($request, $tenantOrganizationId) {
+            $query->whereNull('organization_id');
+
+            if ($request->user()->hasSystemAccess() && $request->boolean('include_all')) {
+                return;
+            }
+
+            $query->orWhere('organization_id', $request->integer('organization_id') ?: $tenantOrganizationId);
+        });
 
         // Search by name
         if ($request->has('search')) {
             $query->where(function ($q) use ($request) {
                 $q->where('name', 'ilike', "%{$request->search}%")
-                  ->orWhere('display_name', 'ilike', "%{$request->search}%");
+                    ->orWhere('display_name', 'ilike', "%{$request->search}%");
             });
         }
 
@@ -64,16 +70,18 @@ class RoleController extends Controller
             'permissions.*' => ['string', 'exists:permissions,name'],
         ]);
 
-        $role = DB::transaction(function () use ($validated) {
+        $organizationId = $this->resolveRoleOrganizationId($request, $validated);
+
+        $role = DB::transaction(function () use ($validated, $organizationId) {
             $role = Role::create([
                 'name' => $validated['name'],
                 'display_name' => $validated['display_name'],
                 'type' => $validated['type'],
-                'organization_id' => $validated['organization_id'] ?? null,
+                'organization_id' => $organizationId,
                 'guard_name' => 'web',
             ]);
 
-            if (!empty($validated['permissions'])) {
+            if (! empty($validated['permissions'])) {
                 $role->syncPermissions($validated['permissions']);
             }
 
@@ -114,15 +122,24 @@ class RoleController extends Controller
             'permissions.*' => ['string', 'exists:permissions,name'],
         ]);
 
-        DB::transaction(function () use ($role, $validated) {
-            $role->update(array_filter([
-                'name' => $validated['name'] ?? null,
-                'display_name' => $validated['display_name'] ?? null,
-                'type' => $validated['type'] ?? null,
-                'organization_id' => array_key_exists('organization_id', $validated) 
-                    ? $validated['organization_id'] 
-                    : $role->organization_id,
-            ], fn ($value) => !is_null($value)));
+        $organizationId = array_key_exists('organization_id', $validated) || array_key_exists('type', $validated)
+            ? $this->resolveRoleOrganizationId($request, $validated)
+            : $role->organization_id;
+
+        DB::transaction(function () use ($role, $validated, $organizationId) {
+            $updates = [];
+
+            foreach (['name', 'display_name', 'type'] as $field) {
+                if (array_key_exists($field, $validated)) {
+                    $updates[$field] = $validated[$field];
+                }
+            }
+
+            if (array_key_exists('organization_id', $validated) || array_key_exists('type', $validated)) {
+                $updates['organization_id'] = $organizationId;
+            }
+
+            $role->update($updates);
 
             if (array_key_exists('permissions', $validated)) {
                 $role->syncPermissions($validated['permissions']);
@@ -159,7 +176,27 @@ class RoleController extends Controller
 
         return response()->json(['message' => 'Role deleted successfully.']);
     }
+
+    protected function resolveRoleOrganizationId(Request $request, array $validated): ?int
+    {
+        $type = $validated['type'] ?? null;
+
+        if ($type instanceof RoleType && $type === RoleType::System) {
+            abort_unless($request->user()->hasSystemAccess(), 403);
+
+            return null;
+        }
+
+        if (is_string($type) && $type === RoleType::System->value) {
+            abort_unless($request->user()->hasSystemAccess(), 403);
+
+            return null;
+        }
+
+        if ($request->user()->hasSystemAccess() && array_key_exists('organization_id', $validated)) {
+            return $validated['organization_id'];
+        }
+
+        return app(TenantContext::class)->organizationId();
+    }
 }
-
-
-

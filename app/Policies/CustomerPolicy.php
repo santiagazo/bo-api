@@ -20,7 +20,7 @@ class CustomerPolicy
      */
     public function view(User $user, Customer $customer): bool
     {
-        return $user->can('view:customers');
+        return $user->can('view:customers') && $user->canAccessOrganization($customer->organization_id);
     }
 
     /**
@@ -36,7 +36,7 @@ class CustomerPolicy
      */
     public function update(User $user, Customer $customer): bool
     {
-        return $user->can('edit:customers');
+        return $user->can('edit:customers') && $user->canAccessOrganization($customer->organization_id);
     }
 
     /**
@@ -44,7 +44,7 @@ class CustomerPolicy
      */
     public function delete(User $user, Customer $customer): bool
     {
-        return $user->can('delete:customers');
+        return $user->can('delete:customers') && $user->canAccessOrganization($customer->organization_id);
     }
 
     /**
@@ -52,7 +52,7 @@ class CustomerPolicy
      */
     public function restore(User $user, Customer $customer): bool
     {
-        return $user->can('restore:customers');
+        return $user->can('restore:customers') && $user->canAccessOrganization($customer->organization_id);
     }
 
     /**
@@ -60,9 +60,6 @@ class CustomerPolicy
      */
     public function forceDelete(User $user, Customer $customer): bool
     {
-        return $user->can('destroy:customers');
+        return $user->can('destroy:customers') && $user->canAccessOrganization($customer->organization_id);
     }
 }
-
-
-

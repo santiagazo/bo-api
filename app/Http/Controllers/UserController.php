@@ -2,16 +2,22 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\OrganizationType;
+use App\Enums\RoleType;
 use App\Http\Resources\UserResource;
+use App\Models\Organization;
+use App\Models\Role;
 use App\Models\User;
 use App\Rules\ValidPhoneNumber;
 use App\Services\PhoneService;
+use App\Support\TenantContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class UserController extends Controller
 {
@@ -32,16 +38,20 @@ class UserController extends Controller
         $query = User::query()
             ->with(['organization', 'roles.permissions']);
 
-        // Filter by organization
-        if ($request->has('organization_id')) {
-            $query->where('organization_id', $request->organization_id);
+        $tenantOrganizationId = app(TenantContext::class)->organizationId();
+        if ($tenantOrganizationId && ! $request->user()->hasSystemAccess()) {
+            $query->where('organization_id', $tenantOrganizationId);
+        } elseif ($tenantOrganizationId && ! $request->boolean('include_all')) {
+            $query->where('organization_id', $tenantOrganizationId);
+        } elseif ($request->has('organization_id')) {
+            $query->where('organization_id', $request->integer('organization_id'));
         }
 
         // Search by name or email
         if ($request->has('search')) {
             $query->where(function ($q) use ($request) {
                 $q->where('name', 'ilike', "%{$request->search}%")
-                  ->orWhere('email', 'ilike', "%{$request->search}%");
+                    ->orWhere('email', 'ilike', "%{$request->search}%");
             });
         }
 
@@ -70,12 +80,15 @@ class UserController extends Controller
             'phone' => ['required', 'string', new ValidPhoneNumber($request->input('phone_country_code', 'US'))],
             'phone_country_code' => ['sometimes', 'string', 'max:5'],
             'password' => ['required', 'string', 'min:6'],
-            'organization_id' => ['required', 'exists:organizations,id'],
+            'organization_id' => ['sometimes', 'exists:organizations,id'],
             'roles' => ['sometimes', 'array'],
             'roles.*' => ['string', 'exists:roles,name'],
         ]);
 
-        $user = DB::transaction(function () use ($validated) {
+        $organizationId = $this->resolveTargetOrganizationId($request, $validated['organization_id'] ?? null);
+        $this->assertAssignableRoles($request, $validated['roles'] ?? [], $organizationId);
+
+        $user = DB::transaction(function () use ($validated, $organizationId) {
             $formattedPhone = $this->phoneService->formatToE164(
                 $validated['phone'],
                 $validated['phone_country_code'] ?? 'US'
@@ -87,10 +100,10 @@ class UserController extends Controller
                 'phone' => $formattedPhone,
                 'phone_country_code' => $validated['phone_country_code'] ?? 'US',
                 'password' => Hash::make($validated['password']),
-                'organization_id' => $validated['organization_id'],
+                'organization_id' => $organizationId,
             ]);
 
-            if (!empty($validated['roles'])) {
+            if (! empty($validated['roles'])) {
                 $user->syncRoles($validated['roles']);
             }
 
@@ -133,7 +146,16 @@ class UserController extends Controller
             'roles.*' => ['string', 'exists:roles,name'],
         ]);
 
-        DB::transaction(function () use ($user, $validated) {
+        $organizationId = array_key_exists('organization_id', $validated)
+            ? $this->resolveTargetOrganizationId($request, $validated['organization_id'])
+            : null;
+        $targetOrganizationId = $organizationId ?? $user->organization_id;
+
+        if (array_key_exists('roles', $validated)) {
+            $this->assertAssignableRoles($request, $validated['roles'], (int) $targetOrganizationId);
+        }
+
+        DB::transaction(function () use ($user, $validated, $organizationId) {
             $updateData = [];
 
             if (isset($validated['name'])) {
@@ -154,11 +176,11 @@ class UserController extends Controller
             if (isset($validated['password'])) {
                 $updateData['password'] = Hash::make($validated['password']);
             }
-            if (isset($validated['organization_id'])) {
-                $updateData['organization_id'] = $validated['organization_id'];
+            if ($organizationId !== null) {
+                $updateData['organization_id'] = $organizationId;
             }
 
-            if (!empty($updateData)) {
+            if (! empty($updateData)) {
                 $user->update($updateData);
             }
 
@@ -170,6 +192,61 @@ class UserController extends Controller
         return response()->json(
             new UserResource($user->fresh()->load(['organization', 'roles.permissions']))
         );
+    }
+
+    protected function resolveTargetOrganizationId(Request $request, ?int $requestedOrganizationId): int
+    {
+        $tenantOrganizationId = app(TenantContext::class)->organizationId();
+
+        if (! $request->user()->hasSystemAccess()) {
+            return (int) $tenantOrganizationId;
+        }
+
+        return (int) ($requestedOrganizationId ?: $tenantOrganizationId);
+    }
+
+    /**
+     * @param  array<int, string>  $roleNames
+     */
+    protected function assertAssignableRoles(Request $request, array $roleNames, int $organizationId): void
+    {
+        if ($roleNames === []) {
+            return;
+        }
+
+        $roles = Role::query()
+            ->whereIn('name', array_values(array_unique($roleNames)))
+            ->get();
+
+        if ($roles->count() !== count(array_unique($roleNames))) {
+            throw ValidationException::withMessages([
+                'roles' => ['One or more selected roles do not exist.'],
+            ]);
+        }
+
+        $targetIsGlobal = Organization::query()
+            ->whereKey($organizationId)
+            ->where('type', OrganizationType::Global)
+            ->exists();
+        $actorHasSystemAccess = $request->user()->hasSystemAccess();
+
+        foreach ($roles as $role) {
+            if ($role->type === RoleType::System) {
+                if (! $actorHasSystemAccess || ! $targetIsGlobal) {
+                    throw ValidationException::withMessages([
+                        'roles' => ['System roles can only be assigned to users in the Built Ox global organization.'],
+                    ]);
+                }
+
+                continue;
+            }
+
+            if ($role->organization_id !== null && (int) $role->organization_id !== $organizationId) {
+                throw ValidationException::withMessages([
+                    'roles' => ['Organization roles must belong to the same organization as the user.'],
+                ]);
+            }
+        }
     }
 
     /**
@@ -223,7 +300,7 @@ class UserController extends Controller
             $updateData['phone_country_code'] = $validated['phone_country_code'];
         }
 
-        if (!empty($updateData)) {
+        if (! empty($updateData)) {
             $user->update($updateData);
         }
 
@@ -232,6 +309,3 @@ class UserController extends Controller
         );
     }
 }
-
-
-

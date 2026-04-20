@@ -27,6 +27,11 @@ class Organization extends BaseModel
         'referral_fee_percentage' => 'decimal:2',
     ];
 
+    public function isGlobal(): bool
+    {
+        return $this->type === OrganizationType::Global;
+    }
+
     public function address(): BelongsTo
     {
         return $this->belongsTo(Address::class);

@@ -20,7 +20,7 @@ class LocationPolicy
      */
     public function view(User $user, Location $location): bool
     {
-        return $user->can('view:locations');
+        return $user->can('view:locations') && $user->canAccessOrganization($location->organization_id);
     }
 
     /**
@@ -36,7 +36,7 @@ class LocationPolicy
      */
     public function update(User $user, Location $location): bool
     {
-        return $user->can('edit:locations');
+        return $user->can('edit:locations') && $user->canAccessOrganization($location->organization_id);
     }
 
     /**
@@ -44,7 +44,7 @@ class LocationPolicy
      */
     public function delete(User $user, Location $location): bool
     {
-        return $user->can('delete:locations');
+        return $user->can('delete:locations') && $user->canAccessOrganization($location->organization_id);
     }
 
     /**
@@ -52,7 +52,7 @@ class LocationPolicy
      */
     public function restore(User $user, Location $location): bool
     {
-        return $user->can('restore:locations');
+        return $user->can('restore:locations') && $user->canAccessOrganization($location->organization_id);
     }
 
     /**
@@ -60,9 +60,6 @@ class LocationPolicy
      */
     public function forceDelete(User $user, Location $location): bool
     {
-        return $user->can('destroy:locations');
+        return $user->can('destroy:locations') && $user->canAccessOrganization($location->organization_id);
     }
 }
-
-
-

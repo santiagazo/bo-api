@@ -2,10 +2,11 @@
 
 namespace App\Models;
 
+use App\Enums\OrganizationType;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -87,5 +88,43 @@ class User extends Authenticatable
     public function scopeWithRelations($query)
     {
         return $query->with(['organization', 'roles.permissions']);
+    }
+
+    public function hasSystemAccess(): bool
+    {
+        if (! $this->belongsToGlobalOrganization()) {
+            return false;
+        }
+
+        return $this->getAllPermissions()
+            ->pluck('name')
+            ->intersect(['*:*', 'access:system'])
+            ->isNotEmpty();
+    }
+
+    public function belongsToGlobalOrganization(): bool
+    {
+        if (! $this->organization_id) {
+            return false;
+        }
+
+        if ($this->relationLoaded('organization')) {
+            return $this->organization?->type === OrganizationType::Global;
+        }
+
+        return $this->organization()
+            ->where('type', OrganizationType::Global)
+            ->exists();
+    }
+
+    public function canAccessOrganization(Organization|int|null $organization): bool
+    {
+        if (! $organization) {
+            return $this->hasSystemAccess();
+        }
+
+        $organizationId = $organization instanceof Organization ? $organization->id : $organization;
+
+        return $this->hasSystemAccess() || (int) $this->organization_id === (int) $organizationId;
     }
 }

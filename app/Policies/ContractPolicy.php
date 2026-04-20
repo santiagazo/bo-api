@@ -20,7 +20,7 @@ class ContractPolicy
      */
     public function view(User $user, Contract $contract): bool
     {
-        return $user->can('view:contracts');
+        return $user->can('view:contracts') && $user->canAccessOrganization($contract->organization_id);
     }
 
     /**
@@ -36,7 +36,7 @@ class ContractPolicy
      */
     public function update(User $user, Contract $contract): bool
     {
-        return $user->can('edit:contracts');
+        return $user->can('edit:contracts') && $user->canAccessOrganization($contract->organization_id);
     }
 
     /**
@@ -44,7 +44,7 @@ class ContractPolicy
      */
     public function delete(User $user, Contract $contract): bool
     {
-        return $user->can('delete:contracts');
+        return $user->can('delete:contracts') && $user->canAccessOrganization($contract->organization_id);
     }
 
     /**
@@ -52,7 +52,7 @@ class ContractPolicy
      */
     public function restore(User $user, Contract $contract): bool
     {
-        return $user->can('restore:contracts');
+        return $user->can('restore:contracts') && $user->canAccessOrganization($contract->organization_id);
     }
 
     /**
@@ -60,9 +60,6 @@ class ContractPolicy
      */
     public function forceDelete(User $user, Contract $contract): bool
     {
-        return $user->can('destroy:contracts');
+        return $user->can('destroy:contracts') && $user->canAccessOrganization($contract->organization_id);
     }
 }
-
-
-

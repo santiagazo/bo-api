@@ -8,6 +8,7 @@ use App\Http\Resources\OrganizationResource;
 use App\Models\Address;
 use App\Models\Organization;
 use App\Services\PhoneService;
+use App\Support\TenantContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
@@ -15,8 +16,7 @@ class OrganizationController extends Controller
 {
     public function __construct(
         protected PhoneService $phoneService
-    ) {
-    }
+    ) {}
 
     /**
      * Display a listing of organizations.
@@ -27,6 +27,11 @@ class OrganizationController extends Controller
 
         $query = Organization::query()->withCount(['users', 'locations', 'jobs']);
 
+        $user = request()->user();
+        if (! $user->hasSystemAccess()) {
+            $query->whereKey(app(TenantContext::class)->organizationId());
+        }
+
         // Filter by type
         if (request()->has('type')) {
             $query->where('type', request()->type);
@@ -35,14 +40,28 @@ class OrganizationController extends Controller
         // Search by name or email
         if (request()->has('search')) {
             $query->where(function ($q) {
-                $q->where('name', 'ilike', '%' . request()->search . '%')
-                  ->orWhere('email', 'ilike', '%' . request()->search . '%');
+                $q->where('name', 'ilike', '%'.request()->search.'%')
+                    ->orWhere('email', 'ilike', '%'.request()->search.'%');
             });
         }
 
         $organizations = $query->orderBy('name')->paginate(50);
 
         return OrganizationResource::collection($organizations);
+    }
+
+    public function current(): OrganizationResource
+    {
+        $organization = app(TenantContext::class)->organization();
+
+        abort_unless($organization, 404);
+
+        $this->authorize('view', $organization);
+
+        $organization->load(['address']);
+        $organization->loadCount(['users', 'locations', 'jobs']);
+
+        return new OrganizationResource($organization);
     }
 
     /**
@@ -72,6 +91,7 @@ class OrganizationController extends Controller
 
         $organization = Organization::create($validated);
 
+        // New tenants need at least one operating location before job workflows start.
         $organization->loadCount(['users', 'locations', 'jobs']);
 
         return new OrganizationResource($organization);
@@ -172,4 +192,3 @@ class OrganizationController extends Controller
         return response()->json(['message' => 'Organization permanently deleted']);
     }
 }
-

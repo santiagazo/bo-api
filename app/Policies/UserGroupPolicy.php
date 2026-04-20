@@ -14,11 +14,11 @@ class UserGroupPolicy
 
     public function view(User $user, UserGroup $userGroup): bool
     {
-        if (!$user->can('view:user-groups')) {
+        if (! $user->can('view:user-groups')) {
             return false;
         }
 
-        return $user->can('access:system') || $user->organization_id === $userGroup->organization_id;
+        return $user->hasSystemAccess() || $user->organization_id === $userGroup->organization_id;
     }
 
     public function create(User $user): bool
@@ -28,37 +28,37 @@ class UserGroupPolicy
 
     public function update(User $user, UserGroup $userGroup): bool
     {
-        if (!$user->can('edit:user-groups')) {
+        if (! $user->can('edit:user-groups')) {
             return false;
         }
 
-        return $user->can('access:system') || $user->organization_id === $userGroup->organization_id;
+        return $user->hasSystemAccess() || $user->organization_id === $userGroup->organization_id;
     }
 
     public function delete(User $user, UserGroup $userGroup): bool
     {
-        if (!$user->can('delete:user-groups')) {
+        if (! $user->can('delete:user-groups')) {
             return false;
         }
 
-        return $user->can('access:system') || $user->organization_id === $userGroup->organization_id;
+        return $user->hasSystemAccess() || $user->organization_id === $userGroup->organization_id;
     }
 
     public function restore(User $user, UserGroup $userGroup): bool
     {
-        if (!$user->can('restore:user-groups')) {
+        if (! $user->can('restore:user-groups')) {
             return false;
         }
 
-        return $user->can('access:system') || $user->organization_id === $userGroup->organization_id;
+        return $user->hasSystemAccess() || $user->organization_id === $userGroup->organization_id;
     }
 
     public function forceDelete(User $user, UserGroup $userGroup): bool
     {
-        if (!$user->can('destroy:user-groups')) {
+        if (! $user->can('destroy:user-groups')) {
             return false;
         }
 
-        return $user->can('access:system') || $user->organization_id === $userGroup->organization_id;
+        return $user->hasSystemAccess() || $user->organization_id === $userGroup->organization_id;
     }
 }

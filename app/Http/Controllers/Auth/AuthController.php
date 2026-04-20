@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
-use App\Http\Requests\Auth\RegisterRequest;
 use App\Http\Resources\UserResource;
 use App\Models\LoginCode;
 use App\Models\User;
@@ -28,7 +27,7 @@ class AuthController extends Controller
 
         // For web SPA requests (stateful), use session-based auth
         if ($this->isStatefulRequest($request)) {
-            if (!Auth::attempt($credentials, $request->boolean('remember'))) {
+            if (! Auth::attempt($credentials, $request->boolean('remember'))) {
                 throw ValidationException::withMessages([
                     'email' => ['The provided credentials are incorrect.'],
                 ]);
@@ -44,7 +43,7 @@ class AuthController extends Controller
         // For mobile/API requests (stateless), issue a token
         $user = User::where('email', $request->email)->first();
 
-        if (!$user || !Hash::check($request->password, $user->password)) {
+        if (! $user || ! Hash::check($request->password, $user->password)) {
             throw ValidationException::withMessages([
                 'email' => ['The provided credentials are incorrect.'],
             ]);
@@ -62,54 +61,17 @@ class AuthController extends Controller
     }
 
     /**
-     * Handle user registration.
-     * Simple flow: email + password only. Name derived from email.
+     * Public registration is intentionally disabled.
+     *
+     * Built Ox is an invite-only SaaS. New users should be created through an
+     * organization-scoped invitation/onboarding flow so they never land in the
+     * global organization accidentally.
      */
-    public function register(RegisterRequest $request, PhoneService $phoneService): JsonResponse
+    public function register(): JsonResponse
     {
-        // TODO: In the future, validate invite_token and get org from invite
-        // For now, create user without org (they'll be assigned later)
-
-        $countryCode = $request->input('phone_country_code', 'US');
-
-        $user = User::create([
-            'name' => $this->deriveNameFromEmail($request->email),
-            'email' => strtolower($request->email),
-            'phone' => $phoneService->formatToE164($request->phone, $countryCode),
-            'phone_country_code' => $countryCode,
-            'password' => Hash::make($request->password),
-            'organization_id' => $request->organization_id ?? $this->getDefaultOrganizationId(),
-        ]);
-
-        // For web SPA, log them in with session
-        if ($this->isStatefulRequest($request)) {
-            Auth::login($user);
-            $request->session()->regenerate();
-
-            return response()->json(
-                new UserResource($user->load(['organization', 'roles.permissions'])),
-                201
-            );
-        }
-
-        // For mobile, return a token
-        $token = $user->createToken($request->input('device_name', 'mobile'))->plainTextToken;
-
         return response()->json([
-            'user' => new UserResource($user->load(['organization', 'roles.permissions'])),
-            'token' => $token,
-        ], 201);
-    }
-
-    /**
-     * Derive a display name from email address.
-     * john.doe@example.com -> John Doe
-     */
-    protected function deriveNameFromEmail(string $email): string
-    {
-        $localPart = explode('@', $email)[0];
-        $name = str_replace(['.', '_', '-'], ' ', $localPart);
-        return ucwords($name);
+            'message' => 'Built Ox is invite-only. Ask an administrator to invite you.',
+        ], 403);
     }
 
     /**
@@ -147,19 +109,8 @@ class AuthController extends Controller
      */
     protected function isStatefulRequest(Request $request): bool
     {
-        return $request->hasSession() && 
+        return $request->hasSession() &&
                $request->session()->isStarted();
-    }
-
-    /**
-     * Get the default organization ID for new users.
-     * Override this based on your business logic.
-     */
-    protected function getDefaultOrganizationId(): ?int
-    {
-        // For now, return null. You might want to create a default org
-        // or require organization_id in the request.
-        return null;
     }
 
     /**
@@ -175,7 +126,7 @@ class AuthController extends Controller
         // Normalize phone to E.164 for database lookup
         $phone = $phoneService->formatToE164($request->phone);
 
-        if (!$phone) {
+        if (! $phone) {
             // Invalid phone format, but don't reveal this
             return response()->json([
                 'message' => 'If this phone number is registered, you will receive a code.',
@@ -184,8 +135,8 @@ class AuthController extends Controller
         }
 
         // Rate limiting: 3 codes per hour per phone (skip in local/testing)
-        if (!app()->environment('local', 'testing')) {
-            $key = 'login-code:' . $phone;
+        if (! app()->environment('local', 'testing')) {
+            $key = 'login-code:'.$phone;
             if (RateLimiter::tooManyAttempts($key, 3)) {
                 $seconds = RateLimiter::availableIn($key);
                 throw ValidationException::withMessages([
@@ -197,11 +148,11 @@ class AuthController extends Controller
         // Find user by phone (E.164 format in database)
         $user = User::where('phone', $phone)->first();
 
-        if (!$user) {
+        if (! $user) {
             // Don't reveal if user exists - still return success
             // but log for debugging
             \Log::info('Login code requested for non-existent phone', ['phone' => $phone]);
-            
+
             return response()->json([
                 'message' => 'If this phone number is registered, you will receive a code.',
                 'expires_in' => 600,
@@ -213,8 +164,8 @@ class AuthController extends Controller
         $sms->sendLoginCode($phone, $loginCode->code);
 
         // Track rate limit (skip in local/testing)
-        if (!app()->environment('local', 'testing')) {
-            RateLimiter::hit('login-code:' . $phone, 3600); // 1 hour window
+        if (! app()->environment('local', 'testing')) {
+            RateLimiter::hit('login-code:'.$phone, 3600); // 1 hour window
         }
 
         return response()->json([
@@ -238,7 +189,7 @@ class AuthController extends Controller
         $phone = $phoneService->formatToE164($request->phone);
         $user = $phone ? User::where('phone', $phone)->first() : null;
 
-        if (!$user) {
+        if (! $user) {
             throw ValidationException::withMessages([
                 'code' => ['Invalid code.'],
             ]);
@@ -251,7 +202,7 @@ class AuthController extends Controller
             ->where('expires_at', '>', now())
             ->first();
 
-        if (!$loginCode) {
+        if (! $loginCode) {
             throw ValidationException::withMessages([
                 'code' => ['Invalid or expired code.'],
             ]);
@@ -300,4 +251,3 @@ class AuthController extends Controller
         ]);
     }
 }
-

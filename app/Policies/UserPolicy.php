@@ -24,7 +24,7 @@ class UserPolicy
             return true;
         }
 
-        return $authUser->can('view:users');
+        return $authUser->can('view:users') && $authUser->canAccessOrganization($user->organization_id);
     }
 
     /**
@@ -45,7 +45,7 @@ class UserPolicy
             return true;
         }
 
-        return $authUser->can('edit:users');
+        return $authUser->can('edit:users') && $authUser->canAccessOrganization($user->organization_id);
     }
 
     /**
@@ -58,7 +58,7 @@ class UserPolicy
             return false;
         }
 
-        return $authUser->can('delete:users');
+        return $authUser->can('delete:users') && $authUser->canAccessOrganization($user->organization_id);
     }
 
     /**
@@ -66,7 +66,7 @@ class UserPolicy
      */
     public function restore(User $authUser, User $user): bool
     {
-        return $authUser->can('restore:users');
+        return $authUser->can('restore:users') && $authUser->canAccessOrganization($user->organization_id);
     }
 
     /**
@@ -74,9 +74,6 @@ class UserPolicy
      */
     public function forceDelete(User $authUser, User $user): bool
     {
-        return $authUser->can('destroy:users');
+        return $authUser->can('destroy:users') && $authUser->canAccessOrganization($user->organization_id);
     }
 }
-
-
-

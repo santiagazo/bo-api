@@ -18,8 +18,8 @@ use App\Policies\LocationPolicy;
 use App\Policies\OrganizationPolicy;
 use App\Policies\PermissionPolicy;
 use App\Policies\RolePolicy;
-use App\Policies\UserPolicy;
 use App\Policies\UserGroupPolicy;
+use App\Policies\UserPolicy;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 
@@ -60,10 +60,13 @@ class AppServiceProvider extends ServiceProvider
             Gate::policy($model, $policy);
         }
 
-        // Grant all abilities to system admins (users with *:* permission)
-        // This runs before any policy check
+        // Grant all abilities only to Built Ox global-org admins.
+        // The data relationship matters as much as the permission assignment.
         Gate::before(function (User $user, string $ability) {
-            if ($user->can('*:*')) {
+            if (
+                $user->belongsToGlobalOrganization()
+                && $user->getAllPermissions()->contains('name', '*:*')
+            ) {
                 return true;
             }
 
