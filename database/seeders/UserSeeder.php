@@ -42,7 +42,7 @@ class UserSeeder extends Seeder
             'email' => 'admin@builtox.com',
             'phone' => $phoneService->formatToE164('4803091250'),
             'phone_country_code' => 'US',
-            'password' => Hash::make('admin123'),
+            'password' => Hash::make('@dm!n$123'),
         ]);
         $user->assignRole('system:admin');
 
