@@ -53,7 +53,7 @@ class UserSeeder extends Seeder
             'email' => 'support@builtox.com',
             'phone' => $phoneService->formatToE164('4803091251'),
             'phone_country_code' => 'US',
-            'password' => Hash::make('support123'),
+            'password' => Hash::make('Supp0rt!2026'),
         ]);
         $user->assignRole('system:support');
 
@@ -64,7 +64,7 @@ class UserSeeder extends Seeder
             'email' => 'readonly@builtox.com',
             'phone' => $phoneService->formatToE164('4803091252'),
             'phone_country_code' => 'US',
-            'password' => Hash::make('readonly123'),
+            'password' => Hash::make('Read0nly!2026'),
         ]);
         $user->assignRole('system:readonly');
 
@@ -89,7 +89,7 @@ class UserSeeder extends Seeder
             'email' => 'admin@abcplumbing.example',
             'phone' => $phoneService->formatToE164('8015551234'),
             'phone_country_code' => 'US',
-            'password' => Hash::make('password'),
+            'password' => Hash::make('Vend0rAdm!n2026'),
         ]);
         $user->assignRole('org:admin');
 
@@ -100,7 +100,7 @@ class UserSeeder extends Seeder
             'email' => 'employee@abcplumbing.example',
             'phone' => $phoneService->formatToE164('8015551235'),
             'phone_country_code' => 'US',
-            'password' => Hash::make('password'),
+            'password' => Hash::make('Vend0rM3mber!2026'),
         ]);
         $user->assignRole('org:member');
 
@@ -111,7 +111,7 @@ class UserSeeder extends Seeder
             'email' => 'viewer@abcplumbing.example',
             'phone' => $phoneService->formatToE164('8015551236'),
             'phone_country_code' => 'US',
-            'password' => Hash::make('password'),
+            'password' => Hash::make('Vend0rV!ewer2026'),
         ]);
         $user->assignRole('org:viewer');
 
@@ -135,7 +135,7 @@ class UserSeeder extends Seeder
             'email' => 'admin@quickdry.example',
             'phone' => $phoneService->formatToE164('3855559999'),
             'phone_country_code' => 'US',
-            'password' => Hash::make('password'),
+            'password' => Hash::make('QuickDryAdm!n2026'),
         ]);
         $user->assignRole('org:admin');
     }
