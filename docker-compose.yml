@@ -26,6 +26,21 @@ services:
     networks:
       - builtox
 
+  web:
+    build:
+      context: ../bo-web
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3333:3333"
+    volumes:
+      - ../bo-web:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+      - VITE_API_URL=http://localhost:8000
+    depends_on:
+      - app
+
   db:
     image: postgres:16-alpine
     ports:
