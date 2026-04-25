@@ -2,7 +2,6 @@
 
 namespace Database\Seeders;
 
-use App\Enums\OrganizationType;
 use App\Models\Organization;
 use App\Models\User;
 use App\Services\PhoneService;
@@ -18,6 +17,12 @@ class UserSeeder extends Seeder
     public function run(): void
     {
         $phoneService = new PhoneService;
+        $organization = function (string $name): Organization {
+            return Organization::query()
+                ->where('name', $name)
+                ->firstOrFail();
+        };
+
         $seedUser = function (
             Organization $organization,
             string $name,
@@ -47,17 +52,7 @@ class UserSeeder extends Seeder
         // GLOBAL USERS (Built Ox Internal)
         // =================================================================
 
-        // Create the global Built Ox organization that anchors global users.
-        // The app must not depend on this being ID 1; tenancy checks use type and permissions.
-        $builtOx = Organization::updateOrCreate(
-            ['name' => 'Built Ox'],
-            [
-                'type' => OrganizationType::Global,
-                'email' => 'global@builtox.com',
-                'phone' => $phoneService->formatToE164('4803091250'),
-                'phone_country_code' => 'US',
-            ]
-        );
+        $builtOx = $organization('Built Ox');
 
         $seedUser($builtOx, 'Global Admin', 'global@builtox.com', '4803091250', '@dm!n$123', 'global:admin');
         $seedUser($builtOx, 'Global Support', 'global.support@builtox.com', '4803091251', 'Gl0balSupp0rt!2026', 'global:support');
@@ -67,15 +62,7 @@ class UserSeeder extends Seeder
         // ORGANIZATION USERS (Tenant-scoped examples)
         // =================================================================
 
-        $primaryOrg = Organization::updateOrCreate(
-            ['name' => 'Quick Dry Services'],
-            [
-                'type' => OrganizationType::Vendor,
-                'email' => 'contact@quickdry.example',
-                'phone' => $phoneService->formatToE164('3855559999'),
-                'phone_country_code' => 'US',
-            ]
-        );
+        $primaryOrg = $organization('Quick Dry Services');
 
         $seedUser($primaryOrg, 'Org Admin', 'org.admin@quickdry.example', '3855559999', '0rgAdm!n2026', 'org:admin');
         $seedUser($primaryOrg, 'Org Support', 'org.support@quickdry.example', '3855559998', '0rgSupp0rt!2026', 'org:support');
@@ -85,15 +72,7 @@ class UserSeeder extends Seeder
         // SECOND TENANT (for cross-organization testing)
         // =================================================================
 
-        $secondaryOrg = Organization::updateOrCreate(
-            ['name' => 'ABC Plumbing'],
-            [
-                'type' => OrganizationType::Vendor,
-                'email' => 'contact@abcplumbing.example',
-                'phone' => $phoneService->formatToE164('8015551234'),
-                'phone_country_code' => 'US',
-            ]
-        );
+        $secondaryOrg = $organization('ABC Plumbing');
 
         $seedUser($secondaryOrg, 'Second Org Admin', 'org.admin@abcplumbing.example', '8015551234', 'ABC0rgAdm!n2026', 'org:admin');
     }
