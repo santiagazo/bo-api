@@ -13,7 +13,7 @@ class TenantOrganizationTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_system_user_can_assume_an_organization_from_request_context(): void
+    public function test_global_user_can_assume_an_organization_from_request_context(): void
     {
         $this->seed(RoleAndPermissionSeeder::class);
 
@@ -21,7 +21,7 @@ class TenantOrganizationTest extends TestCase
         $vendor = $this->organization('Vendor One', OrganizationType::Vendor);
 
         $admin = User::factory()->create(['organization_id' => $builtOx->id]);
-        $admin->assignRole('system:admin');
+        $admin->assignRole('global:admin');
 
         $response = $this
             ->actingAs($admin)
@@ -33,7 +33,7 @@ class TenantOrganizationTest extends TestCase
             ->assertJsonPath('data.id', $vendor->id);
     }
 
-    public function test_system_permission_without_global_org_membership_cannot_cross_tenants(): void
+    public function test_global_permission_without_global_org_membership_cannot_cross_tenants(): void
     {
         $this->seed(RoleAndPermissionSeeder::class);
 
@@ -41,7 +41,7 @@ class TenantOrganizationTest extends TestCase
         $otherOrg = $this->organization('Vendor Two', OrganizationType::Vendor);
 
         $user = User::factory()->create(['organization_id' => $ownOrg->id]);
-        $user->assignRole('system:admin');
+        $user->assignRole('global:admin');
 
         $response = $this
             ->actingAs($user)

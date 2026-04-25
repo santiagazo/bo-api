@@ -31,7 +31,7 @@ class RoleAndPermissionSeeder extends Seeder
      *   - *:users allows all actions on users
      *
      * Role Types:
-     *   - System: Internal Built Ox employees (can access all organizations)
+     *   - Global: Internal Built Ox employees (can access all organizations)
      *   - Organization: External users tied to a specific organization (vendors, customers)
      *
      * RULES:
@@ -73,64 +73,72 @@ class RoleAndPermissionSeeder extends Seeder
         ]);
 
         // Create special permissions
-        Permission::create(['name' => 'access:system']);  // cross-organization access
-        Permission::create(['name' => '*:*']);            // superadmin - all permissions
+        Permission::firstOrCreate(['name' => 'access:global']);  // cross-organization access
+        Permission::firstOrCreate(['name' => '*:*']);            // superadmin - all permissions
 
         // Create wildcard action permissions
         foreach ($actions as $action) {
-            Permission::create(['name' => "{$action}:*"]);
+            Permission::firstOrCreate(['name' => "{$action}:*"]);
         }
 
         // Create subject-specific permissions
         foreach ($subjects as $subject) {
-            Permission::create(['name' => "*:{$subject}"]);
+            Permission::firstOrCreate(['name' => "*:{$subject}"]);
 
             foreach ($actions as $action) {
-                Permission::create(['name' => "{$action}:{$subject}"]);
+                Permission::firstOrCreate(['name' => "{$action}:{$subject}"]);
             }
         }
+
+        $permissionsForActions = fn (array $allowedActions): array => $subjects
+            ->flatMap(fn ($subject) => collect($allowedActions)->map(
+                fn ($action) => "{$action}:{$subject}"
+            ))
+            ->values()
+            ->all();
 
         // Clear the permission cache again after creating all permissions
         // This ensures roles can find them when syncing
         app()[\Spatie\Permission\PermissionRegistrar::class]->forgetCachedPermissions();
 
         // =================================================================
-        // SYSTEM ROLES (Built Ox internal employees)
+        // GLOBAL ROLES (Built Ox internal employees)
         // =================================================================
 
-        // System Admin - Full access to everything
-        $role = Role::create([
-            'name' => 'system:admin',
-            'type' => RoleType::System,
-            'display_name' => 'System Admin',
+        // Global Admin - Full access to everything
+        $role = Role::updateOrCreate([
+            'name' => 'global:admin',
+        ], [
+            'type' => RoleType::Global,
+            'display_name' => 'Global Admin',
+            'guard_name' => 'web',
         ]);
         $role->syncPermissions(['*:*']);
 
-        // System Support - Can view/edit across organizations, limited destructive actions
-        $role = Role::create([
-            'name' => 'system:support',
-            'type' => RoleType::System,
-            'display_name' => 'System Support',
+        // Global Support - Can help across organizations, but without destructive actions
+        $role = Role::updateOrCreate([
+            'name' => 'global:support',
+        ], [
+            'type' => RoleType::Global,
+            'display_name' => 'Global Support',
+            'guard_name' => 'web',
         ]);
         $role->syncPermissions([
-            'access:system',
-            'list:*',
-            'view:*',
-            'create:*',
-            'edit:*',
-            // No delete/restore/destroy - support can't delete things
+            'access:global',
+            ...$permissionsForActions(['create', 'list', 'view', 'edit']),
         ]);
 
-        // System Readonly - Can only view data across organizations
-        $role = Role::create([
-            'name' => 'system:readonly',
-            'type' => RoleType::System,
-            'display_name' => 'System Read-Only',
+        // Global Readonly - Can only view data across organizations
+        $role = Role::updateOrCreate([
+            'name' => 'global:readonly',
+        ], [
+            'type' => RoleType::Global,
+            'display_name' => 'Global Read-Only',
+            'guard_name' => 'web',
         ]);
         $role->syncPermissions([
-            'access:system',
-            'list:*',
-            'view:*',
+            'access:global',
+            ...$permissionsForActions(['list', 'view']),
         ]);
 
         // =================================================================
@@ -138,60 +146,46 @@ class RoleAndPermissionSeeder extends Seeder
         // =================================================================
 
         // Organization Admin - Full access within their organization
-        $role = Role::create([
+        $role = Role::updateOrCreate([
             'name' => 'org:admin',
+        ], [
             'type' => RoleType::Organization,
             'display_name' => 'Organization Admin',
+            'guard_name' => 'web',
         ]);
-        $role->syncPermissions($actions->map(fn ($action) => "{$action}:*")->toArray());
+        $role->syncPermissions($permissionsForActions($actions->all()));
 
-        // Organization Member - Standard access for vendor/subcontractor employees
-        $role = Role::create([
-            'name' => 'org:member',
+        // Organization Support - Can create and edit within their organization,
+        // but cannot perform destructive actions.
+        $role = Role::updateOrCreate([
+            'name' => 'org:support',
+        ], [
             'type' => RoleType::Organization,
-            'display_name' => 'Organization Member',
+            'display_name' => 'Organization Support',
+            'guard_name' => 'web',
         ]);
-        $role->syncPermissions([
-            // Jobs - full access (their main workflow)
-            '*:jobs',
-            // Customers - can view and create (for referrals)
-            'list:customers',
-            'view:customers',
-            'create:customers',
-            // Contracts - view only
-            'list:contracts',
-            'view:contracts',
-            // Locations - view only
-            'list:locations',
-            'view:locations',
-            // Dashboard/Reports - view their own org's data
-            'view:dashboard',
-            'view:reports',
-        ]);
+        $role->syncPermissions($permissionsForActions(['create', 'list', 'view', 'edit']));
 
-        // Organization Viewer - Read-only access (for stakeholders)
-        $role = Role::create([
-            'name' => 'org:viewer',
+        // Organization Readonly - Can only view data in their own organization.
+        $role = Role::updateOrCreate([
+            'name' => 'org:readonly',
+        ], [
             'type' => RoleType::Organization,
-            'display_name' => 'Organization Viewer',
+            'display_name' => 'Organization Read-Only',
+            'guard_name' => 'web',
         ]);
-        $role->syncPermissions([
-            'list:jobs',
-            'view:jobs',
-            'list:customers',
-            'view:customers',
-            'view:dashboard',
-            'view:reports',
-        ]);
+        $role->syncPermissions($permissionsForActions(['list', 'view']));
 
         // =================================================================
         // CUSTOMER ROLE (for Customer Portal access)
         // =================================================================
 
-        $role = Role::create([
+        $role = Role::updateOrCreate([
             'name' => 'customer',
+        ], [
             'type' => RoleType::Organization,
             'display_name' => 'Customer',
+            'guard_name' => 'web',
         ]);
         $role->syncPermissions([
             // Customers can view their own jobs and contracts

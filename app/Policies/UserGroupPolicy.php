@@ -18,7 +18,7 @@ class UserGroupPolicy
             return false;
         }
 
-        return $user->hasSystemAccess() || $user->organization_id === $userGroup->organization_id;
+        return $user->hasGlobalAccess() || $user->organization_id === $userGroup->organization_id;
     }
 
     public function create(User $user): bool
@@ -32,7 +32,7 @@ class UserGroupPolicy
             return false;
         }
 
-        return $user->hasSystemAccess() || $user->organization_id === $userGroup->organization_id;
+        return $user->hasGlobalAccess() || $user->organization_id === $userGroup->organization_id;
     }
 
     public function delete(User $user, UserGroup $userGroup): bool
@@ -41,7 +41,7 @@ class UserGroupPolicy
             return false;
         }
 
-        return $user->hasSystemAccess() || $user->organization_id === $userGroup->organization_id;
+        return $user->hasGlobalAccess() || $user->organization_id === $userGroup->organization_id;
     }
 
     public function restore(User $user, UserGroup $userGroup): bool
@@ -50,7 +50,7 @@ class UserGroupPolicy
             return false;
         }
 
-        return $user->hasSystemAccess() || $user->organization_id === $userGroup->organization_id;
+        return $user->hasGlobalAccess() || $user->organization_id === $userGroup->organization_id;
     }
 
     public function forceDelete(User $user, UserGroup $userGroup): bool
@@ -59,6 +59,6 @@ class UserGroupPolicy
             return false;
         }
 
-        return $user->hasSystemAccess() || $user->organization_id === $userGroup->organization_id;
+        return $user->hasGlobalAccess() || $user->organization_id === $userGroup->organization_id;
     }
 }

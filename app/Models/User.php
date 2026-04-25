@@ -90,7 +90,7 @@ class User extends Authenticatable
         return $query->with(['organization', 'roles.permissions']);
     }
 
-    public function hasSystemAccess(): bool
+    public function hasGlobalAccess(): bool
     {
         if (! $this->belongsToGlobalOrganization()) {
             return false;
@@ -98,8 +98,13 @@ class User extends Authenticatable
 
         return $this->getAllPermissions()
             ->pluck('name')
-            ->intersect(['*:*', 'access:system'])
+            ->intersect(['*:*', 'access:global', 'access:system'])
             ->isNotEmpty();
+    }
+
+    public function hasSystemAccess(): bool
+    {
+        return $this->hasGlobalAccess();
     }
 
     public function belongsToGlobalOrganization(): bool
@@ -120,11 +125,11 @@ class User extends Authenticatable
     public function canAccessOrganization(Organization|int|null $organization): bool
     {
         if (! $organization) {
-            return $this->hasSystemAccess();
+            return $this->hasGlobalAccess();
         }
 
         $organizationId = $organization instanceof Organization ? $organization->id : $organization;
 
-        return $this->hasSystemAccess() || (int) $this->organization_id === (int) $organizationId;
+        return $this->hasGlobalAccess() || (int) $this->organization_id === (int) $organizationId;
     }
 }

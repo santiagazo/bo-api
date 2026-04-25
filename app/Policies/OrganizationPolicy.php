@@ -33,7 +33,7 @@ class OrganizationPolicy
      */
     public function create(User $user): bool
     {
-        return $user->can('create:organizations') && $user->hasSystemAccess();
+        return $user->can('create:organizations') && $user->hasGlobalAccess();
     }
 
     /**
@@ -49,12 +49,12 @@ class OrganizationPolicy
      */
     public function delete(User $user, Organization $organization): bool
     {
-        // The global Built Ox org anchors system access and cannot be removed.
+        // The global Built Ox org anchors global access and cannot be removed.
         if ($organization->isGlobal()) {
             return false;
         }
 
-        return $user->can('delete:organizations') && $user->hasSystemAccess();
+        return $user->can('delete:organizations') && $user->hasGlobalAccess();
     }
 
     /**
@@ -62,7 +62,7 @@ class OrganizationPolicy
      */
     public function restore(User $user, Organization $organization): bool
     {
-        return $user->can('restore:organizations') && $user->hasSystemAccess();
+        return $user->can('restore:organizations') && $user->hasGlobalAccess();
     }
 
     /**
@@ -70,11 +70,11 @@ class OrganizationPolicy
      */
     public function forceDelete(User $user, Organization $organization): bool
     {
-        // The global Built Ox org anchors system access and cannot be removed.
+        // The global Built Ox org anchors global access and cannot be removed.
         if ($organization->isGlobal()) {
             return false;
         }
 
-        return $user->can('destroy:organizations') && $user->hasSystemAccess();
+        return $user->can('destroy:organizations') && $user->hasGlobalAccess();
     }
 }

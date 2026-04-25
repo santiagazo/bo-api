@@ -34,7 +34,7 @@ class RoleController extends Controller
         $query->where(function ($query) use ($request, $tenantOrganizationId) {
             $query->whereNull('organization_id');
 
-            if ($request->user()->hasSystemAccess() && $request->boolean('include_all')) {
+            if ($request->user()->hasGlobalAccess() && $request->boolean('include_all')) {
                 return;
             }
 
@@ -158,10 +158,10 @@ class RoleController extends Controller
     {
         $this->authorize('delete', $role);
 
-        // Prevent deletion of system roles
-        if (in_array($role->name, ['system:admin', 'system:support', 'system:readonly'])) {
+        // Prevent deletion of built-in global roles
+        if (in_array($role->name, ['global:admin', 'global:support', 'global:readonly', 'system:admin', 'system:support', 'system:readonly'])) {
             return response()->json([
-                'message' => 'Cannot delete system roles.',
+                'message' => 'Cannot delete built-in global roles.',
             ], 403);
         }
 
@@ -181,19 +181,19 @@ class RoleController extends Controller
     {
         $type = $validated['type'] ?? null;
 
-        if ($type instanceof RoleType && $type === RoleType::System) {
-            abort_unless($request->user()->hasSystemAccess(), 403);
+        if ($type instanceof RoleType && $type->isGlobalScope()) {
+            abort_unless($request->user()->hasGlobalAccess(), 403);
 
             return null;
         }
 
-        if (is_string($type) && $type === RoleType::System->value) {
-            abort_unless($request->user()->hasSystemAccess(), 403);
+        if (is_string($type) && in_array($type, [RoleType::Global->value, RoleType::System->value], true)) {
+            abort_unless($request->user()->hasGlobalAccess(), 403);
 
             return null;
         }
 
-        if ($request->user()->hasSystemAccess() && array_key_exists('organization_id', $validated)) {
+        if ($request->user()->hasGlobalAccess() && array_key_exists('organization_id', $validated)) {
             return $validated['organization_id'];
         }
 

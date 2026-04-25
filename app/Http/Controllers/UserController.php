@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Enums\OrganizationType;
-use App\Enums\RoleType;
 use App\Http\Resources\UserResource;
 use App\Models\Organization;
 use App\Models\Role;
@@ -39,7 +38,7 @@ class UserController extends Controller
             ->with(['organization', 'roles.permissions']);
 
         $tenantOrganizationId = app(TenantContext::class)->organizationId();
-        if ($tenantOrganizationId && ! $request->user()->hasSystemAccess()) {
+        if ($tenantOrganizationId && ! $request->user()->hasGlobalAccess()) {
             $query->where('organization_id', $tenantOrganizationId);
         } elseif ($tenantOrganizationId && ! $request->boolean('include_all')) {
             $query->where('organization_id', $tenantOrganizationId);
@@ -198,7 +197,7 @@ class UserController extends Controller
     {
         $tenantOrganizationId = app(TenantContext::class)->organizationId();
 
-        if (! $request->user()->hasSystemAccess()) {
+        if (! $request->user()->hasGlobalAccess()) {
             return (int) $tenantOrganizationId;
         }
 
@@ -228,13 +227,13 @@ class UserController extends Controller
             ->whereKey($organizationId)
             ->where('type', OrganizationType::Global)
             ->exists();
-        $actorHasSystemAccess = $request->user()->hasSystemAccess();
+        $actorHasGlobalAccess = $request->user()->hasGlobalAccess();
 
         foreach ($roles as $role) {
-            if ($role->type === RoleType::System) {
-                if (! $actorHasSystemAccess || ! $targetIsGlobal) {
+            if ($role->type?->isGlobalScope()) {
+                if (! $actorHasGlobalAccess || ! $targetIsGlobal) {
                     throw ValidationException::withMessages([
-                        'roles' => ['System roles can only be assigned to users in the Built Ox global organization.'],
+                        'roles' => ['Global roles can only be assigned to users in the Built Ox global organization.'],
                     ]);
                 }
 

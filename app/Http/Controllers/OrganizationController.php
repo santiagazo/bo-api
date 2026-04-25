@@ -28,7 +28,7 @@ class OrganizationController extends Controller
         $query = Organization::query()->withCount(['users', 'locations', 'jobs']);
 
         $user = request()->user();
-        if (! $user->hasSystemAccess()) {
+        if (! $user->hasGlobalAccess()) {
             $query->whereKey(app(TenantContext::class)->organizationId());
         }
 

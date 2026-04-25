@@ -67,7 +67,7 @@ class RolePolicy
     protected function withinTenant(User $user, Role $role): bool
     {
         if ($role->organization_id === null) {
-            return $user->hasSystemAccess() || $role->type === RoleType::Organization;
+            return $user->hasGlobalAccess() || $role->type === RoleType::Organization;
         }
 
         return $user->canAccessOrganization($role->organization_id);
@@ -76,7 +76,7 @@ class RolePolicy
     protected function canModifyWithinTenant(User $user, Role $role): bool
     {
         if ($role->organization_id === null) {
-            return $user->hasSystemAccess();
+            return $user->hasGlobalAccess();
         }
 
         return $user->canAccessOrganization($role->organization_id);

@@ -23,7 +23,7 @@ class UserGroupController extends Controller
             ->with('organization')
             ->withCount('users');
 
-        if (! $authUser->hasSystemAccess()) {
+        if (! $authUser->hasGlobalAccess()) {
             $query->where('organization_id', $authUser->organization_id);
         } elseif ($request->filled('organization_id')) {
             $query->where('organization_id', $request->integer('organization_id'));
@@ -123,7 +123,7 @@ class UserGroupController extends Controller
     protected function validatePayload(Request $request, ?UserGroup $userGroup = null): array
     {
         $authUser = $request->user();
-        $organizationId = $authUser->hasSystemAccess()
+        $organizationId = $authUser->hasGlobalAccess()
             ? (int) ($request->input('organization_id') ?: $userGroup?->organization_id ?: $authUser->organization_id)
             : (int) $authUser->organization_id;
 
