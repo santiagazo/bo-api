@@ -2,11 +2,13 @@
 
 namespace Database\Seeders;
 
+use App\Enums\OrganizationType;
 use App\Models\Organization;
 use App\Models\User;
 use App\Services\PhoneService;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 
 class UserSeeder extends Seeder
 {
@@ -22,6 +24,7 @@ class UserSeeder extends Seeder
                 ->where('name', $name)
                 ->firstOrFail();
         };
+        $fallbackPhoneNumber = 6025551000;
 
         $seedUser = function (
             Organization $organization,
@@ -59,21 +62,62 @@ class UserSeeder extends Seeder
         $seedUser($builtOx, 'Global Read-Only', 'global.readonly@builtox.com', '4803091252', 'Gl0balRead0nly!2026', 'global:readonly');
 
         // =================================================================
-        // ORGANIZATION USERS (Tenant-scoped examples)
+        // ORGANIZATION ADMINS (one per tenant)
+        // =================================================================
+
+        $orgAdminOverrides = [
+            'Quick Dry Services' => [
+                'name' => 'Org Admin',
+                'email' => 'org.admin@quickdry.example',
+                'phone' => '3855559999',
+                'password' => '0rgAdm!n2026',
+            ],
+            'ABC Plumbing' => [
+                'name' => 'Second Org Admin',
+                'email' => 'org.admin@abcplumbing.example',
+                'phone' => '8015551234',
+                'password' => 'ABC0rgAdm!n2026',
+            ],
+        ];
+
+        Organization::query()
+            ->where('type', '!=', OrganizationType::Global->value)
+            ->orderBy('id')
+            ->get()
+            ->each(function (Organization $organization) use (
+                $orgAdminOverrides,
+                $seedUser,
+                &$fallbackPhoneNumber
+            ): void {
+                $defaultDomain = Str::of($organization->name)
+                    ->lower()
+                    ->replaceMatches('/[^a-z0-9]+/', '')
+                    ->toString().'.example';
+                $domain = Str::after($organization->email ?? $defaultDomain, '@') ?: $defaultDomain;
+                $config = $orgAdminOverrides[$organization->name] ?? [
+                    'name' => "{$organization->name} Admin",
+                    'email' => "org.admin@{$domain}",
+                    'phone' => $organization->phone ?: (string) $fallbackPhoneNumber++,
+                    'password' => '0rgAdm!n2026',
+                ];
+
+                $seedUser(
+                    $organization,
+                    $config['name'],
+                    $config['email'],
+                    $config['phone'],
+                    $config['password'],
+                    'org:admin'
+                );
+            });
+
+        // =================================================================
+        // EXTRA EXAMPLE ORG USERS
         // =================================================================
 
         $primaryOrg = $organization('Quick Dry Services');
 
-        $seedUser($primaryOrg, 'Org Admin', 'org.admin@quickdry.example', '3855559999', '0rgAdm!n2026', 'org:admin');
         $seedUser($primaryOrg, 'Org Support', 'org.support@quickdry.example', '3855559998', '0rgSupp0rt!2026', 'org:support');
         $seedUser($primaryOrg, 'Org Read-Only', 'org.readonly@quickdry.example', '3855559997', '0rgRead0nly!2026', 'org:readonly');
-
-        // =================================================================
-        // SECOND TENANT (for cross-organization testing)
-        // =================================================================
-
-        $secondaryOrg = $organization('ABC Plumbing');
-
-        $seedUser($secondaryOrg, 'Second Org Admin', 'org.admin@abcplumbing.example', '8015551234', 'ABC0rgAdm!n2026', 'org:admin');
     }
 }
