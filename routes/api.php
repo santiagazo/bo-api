@@ -1,11 +1,12 @@
 <?php
 
 use App\Http\Controllers\Auth\AuthController;
+use App\Http\Controllers\CompanyController;
+use App\Http\Controllers\LocationController;
 use App\Http\Controllers\OrganizationController;
 use App\Http\Controllers\PermissionController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\UserController;
-use App\Http\Controllers\UserGroupController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -25,17 +26,24 @@ Route::post('/auth/verify-code', [AuthController::class, 'verifyCode']);
 // Protected routes (require authentication)
 Route::middleware('auth:sanctum')->group(function () {
     // Auth
-    Route::get('/user', [AuthController::class, 'user']);
+    Route::get('/user', [AuthController::class, 'user'])->middleware('company.context:optional');
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::post('/auth/reset-password', [AuthController::class, 'resetPassword']);
 
     // User profile
     Route::put('/user/profile', [UserController::class, 'updateProfile']);
 
-    Route::middleware('tenant.organization')->group(function () {
-        // Tenant context
-        Route::get('/organizations/current', [OrganizationController::class, 'current']);
+    // Platform / global admin routes
+    Route::get('/companies', [CompanyController::class, 'index'])->middleware('company.context:optional');
+    Route::post('/companies', [CompanyController::class, 'store'])->middleware('company.context:optional');
+    Route::get('/companies/current', [CompanyController::class, 'current'])->middleware('company.context');
+    Route::get('/companies/{company}', [CompanyController::class, 'show'])->middleware('company.context:optional');
+    Route::put('/companies/{company}', [CompanyController::class, 'update'])->middleware('company.context:optional');
+    Route::delete('/companies/{company}', [CompanyController::class, 'destroy'])->middleware('company.context:optional');
+    Route::post('/companies/{id}/restore', [CompanyController::class, 'restore'])->middleware('company.context:optional');
+    Route::delete('/companies/{id}/force', [CompanyController::class, 'forceDelete'])->middleware('company.context:optional');
 
+    Route::middleware('company.context')->group(function () {
         // Roles & Permissions
         Route::apiResource('roles', RoleController::class);
         Route::get('/permissions/grouped', [PermissionController::class, 'grouped']);
@@ -43,12 +51,10 @@ Route::middleware('auth:sanctum')->group(function () {
 
         // Users (admin)
         Route::apiResource('users', UserController::class);
-        Route::apiResource('user-groups', UserGroupController::class);
 
-        // Organizations
-        Route::apiResource('organizations', OrganizationController::class);
-        Route::post('/organizations/{id}/restore', [OrganizationController::class, 'restore']);
-        Route::delete('/organizations/{id}/force', [OrganizationController::class, 'forceDelete']);
+        // External organizations
+        Route::apiResource('organizations', OrganizationController::class)->except(['restore', 'forceDelete']);
+        Route::apiResource('locations', LocationController::class)->except(['restore', 'forceDelete']);
     });
 });
 

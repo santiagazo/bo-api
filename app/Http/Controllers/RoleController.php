@@ -2,10 +2,11 @@
 
 namespace App\Http\Controllers;
 
-use App\Enums\RoleType;
+use App\Enums\RoleScope;
 use App\Http\Resources\RoleResource;
+use App\Models\Permission;
 use App\Models\Role;
-use App\Support\TenantContext;
+use App\Support\CompanyContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -14,70 +15,70 @@ use Illuminate\Validation\Rule;
 
 class RoleController extends Controller
 {
-    /**
-     * Display a listing of roles.
-     */
     public function index(Request $request): AnonymousResourceCollection
     {
         $this->authorize('viewAny', Role::class);
 
-        $query = Role::query()
-            ->withCount('users')
-            ->with('permissions');
+        $companyId = app(CompanyContext::class)->companyId();
 
-        // Filter by type
-        if ($request->has('type')) {
-            $query->where('type', $request->type);
+        $query = Role::query()
+            ->with('permissions')
+            ->withCount('memberships')
+            ->where('scope_type', RoleScope::Company);
+
+        if ($companyId) {
+            $query->where(function ($roleQuery) use ($companyId) {
+                $roleQuery->whereNull('company_id')
+                    ->orWhere('company_id', $companyId);
+            });
+        } else {
+            $query->whereNull('company_id');
         }
 
-        $tenantOrganizationId = app(TenantContext::class)->organizationId();
-        $query->where(function ($query) use ($request, $tenantOrganizationId) {
-            $query->whereNull('organization_id');
-
-            if ($request->user()->hasGlobalAccess() && $request->boolean('include_all')) {
-                return;
-            }
-
-            $query->orWhere('organization_id', $request->integer('organization_id') ?: $tenantOrganizationId);
-        });
-
-        // Search by name
-        if ($request->has('search')) {
-            $query->where(function ($q) use ($request) {
-                $q->where('name', 'ilike', "%{$request->search}%")
-                    ->orWhere('display_name', 'ilike', "%{$request->search}%");
+        if ($request->filled('search')) {
+            $search = $request->string('search');
+            $query->where(function ($roleQuery) use ($search) {
+                $roleQuery->where('name', 'ilike', "%{$search}%")
+                    ->orWhere('display_name', 'ilike', "%{$search}%");
             });
         }
 
-        $roles = $query->orderBy('type')->orderBy('name')->paginate(50);
+        $roles = $query->orderBy('display_name')->paginate(50);
 
         return RoleResource::collection($roles);
     }
 
-    /**
-     * Store a newly created role.
-     */
     public function store(Request $request): JsonResponse
     {
         $this->authorize('create', Role::class);
 
+        $companyId = app(CompanyContext::class)->companyId();
+        $assignablePermissions = $this->assignablePermissionNames($request);
         $validated = $request->validate([
-            'name' => ['required', 'string', 'max:255', 'unique:roles,name'],
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                'regex:/^[a-z0-9:-]+$/',
+                Rule::unique('roles', 'name')->where(function ($query) use ($companyId) {
+                    $query->where('guard_name', 'web')
+                        ->where(function ($scopedQuery) use ($companyId) {
+                            $scopedQuery->whereNull('company_id')
+                                ->orWhere('company_id', $companyId);
+                        });
+                }),
+            ],
             'display_name' => ['required', 'string', 'max:255'],
-            'type' => ['required', Rule::enum(RoleType::class)],
-            'organization_id' => ['nullable', 'exists:organizations,id'],
             'permissions' => ['sometimes', 'array'],
-            'permissions.*' => ['string', 'exists:permissions,name'],
+            'permissions.*' => ['string', 'exists:permissions,name', Rule::in($assignablePermissions)],
         ]);
 
-        $organizationId = $this->resolveRoleOrganizationId($request, $validated);
-
-        $role = DB::transaction(function () use ($validated, $organizationId) {
+        $role = DB::transaction(function () use ($validated, $companyId) {
             $role = Role::create([
                 'name' => $validated['name'],
                 'display_name' => $validated['display_name'],
-                'type' => $validated['type'],
-                'organization_id' => $organizationId,
+                'scope_type' => RoleScope::Company,
+                'company_id' => $companyId,
                 'guard_name' => 'web',
             ]);
 
@@ -88,58 +89,53 @@ class RoleController extends Controller
             return $role;
         });
 
-        return response()->json(
-            new RoleResource($role->load('permissions')),
-            201
-        );
+        return response()->json(new RoleResource($role->load('permissions')), 201);
     }
 
-    /**
-     * Display the specified role.
-     */
     public function show(Role $role): JsonResponse
     {
         $this->authorize('view', $role);
 
         return response()->json(
-            new RoleResource($role->load('permissions')->loadCount('users'))
+            new RoleResource($role->load('permissions')->loadCount('memberships'))
         );
     }
 
-    /**
-     * Update the specified role.
-     */
     public function update(Request $request, Role $role): JsonResponse
     {
         $this->authorize('update', $role);
 
+        $companyId = app(CompanyContext::class)->companyId();
+        $assignablePermissions = $this->assignablePermissionNames($request);
         $validated = $request->validate([
-            'name' => ['sometimes', 'string', 'max:255', Rule::unique('roles')->ignore($role->id)],
+            'name' => [
+                'sometimes',
+                'string',
+                'max:255',
+                'regex:/^[a-z0-9:-]+$/',
+                Rule::unique('roles', 'name')
+                    ->ignore($role->id)
+                    ->where(function ($query) use ($companyId) {
+                        $query->where('guard_name', 'web')
+                            ->where(function ($scopedQuery) use ($companyId) {
+                                $scopedQuery->whereNull('company_id')
+                                    ->orWhere('company_id', $companyId);
+                            });
+                    }),
+            ],
             'display_name' => ['sometimes', 'string', 'max:255'],
-            'type' => ['sometimes', Rule::enum(RoleType::class)],
-            'organization_id' => ['nullable', 'exists:organizations,id'],
             'permissions' => ['sometimes', 'array'],
-            'permissions.*' => ['string', 'exists:permissions,name'],
+            'permissions.*' => ['string', 'exists:permissions,name', Rule::in($assignablePermissions)],
         ]);
 
-        $organizationId = array_key_exists('organization_id', $validated) || array_key_exists('type', $validated)
-            ? $this->resolveRoleOrganizationId($request, $validated)
-            : $role->organization_id;
+        DB::transaction(function () use ($validated, $role) {
+            $updates = collect($validated)
+                ->only(['name', 'display_name'])
+                ->all();
 
-        DB::transaction(function () use ($role, $validated, $organizationId) {
-            $updates = [];
-
-            foreach (['name', 'display_name', 'type'] as $field) {
-                if (array_key_exists($field, $validated)) {
-                    $updates[$field] = $validated[$field];
-                }
+            if ($updates !== []) {
+                $role->update($updates);
             }
-
-            if (array_key_exists('organization_id', $validated) || array_key_exists('type', $validated)) {
-                $updates['organization_id'] = $organizationId;
-            }
-
-            $role->update($updates);
 
             if (array_key_exists('permissions', $validated)) {
                 $role->syncPermissions($validated['permissions']);
@@ -147,28 +143,17 @@ class RoleController extends Controller
         });
 
         return response()->json(
-            new RoleResource($role->fresh()->load('permissions'))
+            new RoleResource($role->fresh()->load('permissions')->loadCount('memberships'))
         );
     }
 
-    /**
-     * Remove the specified role.
-     */
     public function destroy(Role $role): JsonResponse
     {
         $this->authorize('delete', $role);
 
-        // Prevent deletion of built-in global roles
-        if (in_array($role->name, ['global:admin', 'global:support', 'global:readonly', 'system:admin', 'system:support', 'system:readonly'])) {
+        if ($role->memberships()->count() > 0) {
             return response()->json([
-                'message' => 'Cannot delete built-in global roles.',
-            ], 403);
-        }
-
-        // Check if role has users
-        if ($role->users()->count() > 0) {
-            return response()->json([
-                'message' => 'Cannot delete role with assigned users. Please reassign users first.',
+                'message' => 'Cannot delete a role that is currently assigned.',
             ], 422);
         }
 
@@ -177,26 +162,17 @@ class RoleController extends Controller
         return response()->json(['message' => 'Role deleted successfully.']);
     }
 
-    protected function resolveRoleOrganizationId(Request $request, array $validated): ?int
+    protected function assignablePermissionNames(Request $request): array
     {
-        $type = $validated['type'] ?? null;
+        $company = app(CompanyContext::class)->company();
 
-        if ($type instanceof RoleType && $type->isGlobalScope()) {
-            abort_unless($request->user()->hasGlobalAccess(), 403);
-
-            return null;
+        if (! $company) {
+            return Permission::query()->pluck('name')->all();
         }
 
-        if (is_string($type) && in_array($type, [RoleType::Global->value, RoleType::System->value], true)) {
-            abort_unless($request->user()->hasGlobalAccess(), 403);
-
-            return null;
-        }
-
-        if ($request->user()->hasGlobalAccess() && array_key_exists('organization_id', $validated)) {
-            return $validated['organization_id'];
-        }
-
-        return app(TenantContext::class)->organizationId();
+        return $request->user()
+            ?->permissionsForUiContext($company)
+            ->values()
+            ->all() ?? [];
     }
 }

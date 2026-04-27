@@ -2,21 +2,19 @@
 
 namespace App\Models;
 
-use App\Enums\OrganizationType;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use App\Enums\MembershipScope;
+use App\Enums\MembershipStatus;
+use App\Support\CompanyContext;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Collection;
 use Laravel\Sanctum\HasApiTokens;
-use Spatie\Permission\Traits\HasPermissions;
-use Spatie\Permission\Traits\HasRoles;
 
 class User extends Authenticatable
 {
-    use HasApiTokens, HasFactory, HasPermissions, HasRoles, Notifiable, SoftDeletes;
+    use HasApiTokens, Notifiable, SoftDeletes;
 
     /**
      * The attributes that are mass assignable.
@@ -27,7 +25,6 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
-        'organization_id',
         'phone',
         'phone_country_code',
     ];
@@ -55,81 +52,277 @@ class User extends Authenticatable
         ];
     }
 
-    /**
-     * @return BelongsTo<Organization,User>
-     */
-    public function organization(): BelongsTo
-    {
-        return $this->belongsTo(Organization::class);
-    }
-
-    /**
-     * @return HasMany<Job,User>
-     */
     public function assignedJobs(): HasMany
     {
         return $this->hasMany(Job::class, 'assigned_user_id');
     }
 
-    /**
-     * @return HasMany<NotificationPreference,User>
-     */
-    public function notificationPreferences(): HasMany
+    public function memberships(): HasMany
     {
-        return $this->hasMany(NotificationPreference::class);
+        return $this->hasMany(Membership::class);
     }
 
-    public function userGroups(): BelongsToMany
+    public function companyMemberships(): HasMany
     {
-        return $this->belongsToMany(UserGroup::class)
-            ->withTimestamps();
+        return $this->memberships()
+            ->where('scope_type', MembershipScope::Company)
+            ->where('status', MembershipStatus::Active);
+    }
+
+    public function platformMemberships(): HasMany
+    {
+        return $this->memberships()
+            ->where('scope_type', MembershipScope::Platform)
+            ->where('status', MembershipStatus::Active);
     }
 
     public function scopeWithRelations($query)
     {
-        return $query->with(['organization', 'roles.permissions']);
+        return $query->with([
+            'memberships.company.address',
+            'memberships.roles.permissions',
+        ]);
     }
 
-    public function hasGlobalAccess(): bool
+    public function primaryCompanyMembership(): ?Membership
     {
-        if (! $this->belongsToGlobalOrganization()) {
+        return $this->memberships()
+            ->where('scope_type', MembershipScope::Company)
+            ->where('status', MembershipStatus::Active)
+            ->where('is_primary', true)
+            ->first();
+    }
+
+    public function primaryCompanyId(): ?int
+    {
+        return $this->primaryCompanyMembership()?->company_id;
+    }
+
+    public function platformMembership(): ?Membership
+    {
+        return $this->memberships()
+            ->where('scope_type', MembershipScope::Platform)
+            ->where('status', MembershipStatus::Active)
+            ->first();
+    }
+
+    public function activeMembership(?Company $company = null): ?Membership
+    {
+        $company ??= app(CompanyContext::class)->company();
+
+        if ($company) {
+            $membership = $this->memberships()
+                ->where('scope_type', MembershipScope::Company)
+                ->where('status', MembershipStatus::Active)
+                ->where('company_id', $company->id)
+                ->with('roles.permissions', 'company')
+                ->first();
+
+            if ($membership) {
+                return $membership;
+            }
+
+            return $this->platformMembership()?->loadMissing('roles.permissions');
+        }
+
+        return $this->primaryCompanyMembership()?->loadMissing('roles.permissions', 'company')
+            ?? $this->platformMembership()?->loadMissing('roles.permissions');
+    }
+
+    public function activeCompany(?Company $company = null): ?Company
+    {
+        $company ??= app(CompanyContext::class)->company();
+
+        if ($company) {
+            return $company;
+        }
+
+        return $this->primaryCompanyMembership()?->company;
+    }
+
+    public function currentCompanyId(?Company $company = null): ?int
+    {
+        return $this->activeCompany($company)?->id;
+    }
+
+    public function hasPlatformAccess(): bool
+    {
+        $membership = $this->platformMembership();
+
+        if (! $membership) {
             return false;
         }
 
-        return $this->getAllPermissions()
-            ->pluck('name')
-            ->intersect(['*:*', 'access:global', 'access:system'])
-            ->isNotEmpty();
+        return $membership->hasAnyPermission(['*:*', 'access:platform']);
+    }
+
+    public function hasPlatformPermission(string $permission): bool
+    {
+        $membership = $this->platformMembership();
+
+        if (! $membership) {
+            return false;
+        }
+
+        return $this->membershipHasPermission($membership, $permission);
     }
 
     public function hasSystemAccess(): bool
     {
-        return $this->hasGlobalAccess();
+        return $this->hasPlatformAccess();
     }
 
-    public function belongsToGlobalOrganization(): bool
+    public function hasGlobalAccess(): bool
     {
-        if (! $this->organization_id) {
+        return $this->hasPlatformAccess();
+    }
+
+    public function canImpersonateCompanies(): bool
+    {
+        $membership = $this->platformMembership();
+
+        if (! $membership) {
             return false;
         }
 
-        if ($this->relationLoaded('organization')) {
-            return $this->organization?->type === OrganizationType::Global;
+        return $membership->hasAnyPermission(['*:*', 'impersonate:companies']);
+    }
+
+    public function canAccessCompany(Company|int|null $company): bool
+    {
+        if (! $company) {
+            return $this->hasPlatformAccess() || $this->primaryCompanyId() !== null;
         }
 
-        return $this->organization()
-            ->where('type', OrganizationType::Global)
+        $companyId = $company instanceof Company ? $company->id : $company;
+
+        if ($this->hasPlatformAccess()) {
+            return true;
+        }
+
+        return $this->memberships()
+            ->where('scope_type', MembershipScope::Company)
+            ->where('status', MembershipStatus::Active)
+            ->where('company_id', $companyId)
             ->exists();
     }
 
-    public function canAccessOrganization(Organization|int|null $organization): bool
+    public function permissionsForContext(?Company $company = null): Collection
     {
-        if (! $organization) {
-            return $this->hasGlobalAccess();
+        $membership = $this->activeMembership($company);
+
+        if (! $membership) {
+            return collect();
         }
 
-        $organizationId = $organization instanceof Organization ? $organization->id : $organization;
+        return $membership->getAllPermissions()->pluck('name')->unique()->values();
+    }
 
-        return $this->hasGlobalAccess() || (int) $this->organization_id === (int) $organizationId;
+    public function rolesForContext(?Company $company = null): Collection
+    {
+        $membership = $this->activeMembership($company);
+
+        if (! $membership) {
+            return collect();
+        }
+
+        return $membership->roles;
+    }
+
+    public function hasPermissionInContext(string $permission, ?Company $company = null): bool
+    {
+        $membership = $this->activeMembership($company);
+
+        if (! $membership) {
+            return false;
+        }
+
+        return $this->membershipHasPermission($membership, $permission);
+    }
+
+    public function hasPermissionForCompany(string $permission, Company|int $company): bool
+    {
+        $companyModel = $company instanceof Company ? $company : Company::findOrFail($company);
+        $activeCompany = app(CompanyContext::class)->company();
+
+        if ($activeCompany && $activeCompany->id !== $companyModel->id) {
+            return false;
+        }
+
+        if (! $this->canAccessCompany($companyModel)) {
+            return false;
+        }
+
+        if (
+            $this->memberships()
+                ->where('scope_type', MembershipScope::Company)
+                ->where('status', MembershipStatus::Active)
+                ->where('company_id', $companyModel->id)
+                ->exists()
+        ) {
+            return $this->hasPermissionInContext($permission, $companyModel);
+        }
+
+        return $this->hasPlatformPermission($permission);
+    }
+
+    public function permissionsForUiContext(?Company $company = null): Collection
+    {
+        $permissions = $this->permissionsForContext($company);
+
+        if (! $company) {
+            return $permissions;
+        }
+
+        $excludedPermissions = collect([
+            'access:platform',
+            'impersonate:companies',
+            'create:companies',
+            'list:companies',
+            'delete:companies',
+            'restore:companies',
+            'destroy:companies',
+        ]);
+
+        $candidatePermissions = Permission::query()
+            ->pluck('name')
+            ->reject(fn (string $permission) => str_contains($permission, '*'))
+            ->reject(fn (string $permission) => $excludedPermissions->contains($permission))
+            ->values();
+
+        $expandedPermissions = $permissions->flatMap(function (string $permission) use ($candidatePermissions, $excludedPermissions) {
+            if ($excludedPermissions->contains($permission)) {
+                return [];
+            }
+
+            if (! str_contains($permission, '*')) {
+                return [$permission];
+            }
+
+            [$action, $subject] = array_pad(explode(':', $permission, 2), 2, '*');
+
+            return $candidatePermissions->filter(function (string $candidate) use ($action, $subject) {
+                [$candidateAction, $candidateSubject] = array_pad(explode(':', $candidate, 2), 2, null);
+
+                return ($action === '*' || $action === $candidateAction)
+                    && ($subject === '*' || $subject === $candidateSubject);
+            })->values();
+        });
+
+        return $expandedPermissions
+            ->unique()
+            ->values();
+    }
+
+    protected function membershipHasPermission(Membership $membership, string $permission): bool
+    {
+        if ($membership->hasPermissionTo('*:*') || $membership->hasPermissionTo($permission)) {
+            return true;
+        }
+
+        [$action, $subject] = array_pad(explode(':', $permission, 2), 2, '*');
+
+        return $membership->hasPermissionTo("{$action}:*")
+            || $membership->hasPermissionTo("*:{$subject}");
     }
 }

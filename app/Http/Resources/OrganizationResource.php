@@ -7,22 +7,20 @@ use Illuminate\Http\Resources\Json\JsonResource;
 
 class OrganizationResource extends JsonResource
 {
-    /**
-     * Transform the resource into an array.
-     *
-     * @return array<string, mixed>
-     */
     public function toArray(Request $request): array
     {
         return [
             'id' => $this->id,
-            'name' => $this->name,
-            'type' => $this->type,
-            'phone' => $this->phone,
-            'email' => $this->email,
+            'company_id' => $this->company_id,
+            'display_name' => $this->display_name,
+            'legal_name' => $this->legal_name,
+            'status' => $this->status,
+            'website_url' => $this->website_url,
+            'primary_phone' => $this->primary_phone,
+            'primary_email' => $this->primary_email,
             'phone_country_code' => $this->phone_country_code,
             'address_id' => $this->address_id,
-            'referral_fee_percentage' => $this->referral_fee_percentage,
+            'company' => CompanyResource::make($this->whenLoaded('company')),
             'address' => $this->whenLoaded('address', function () {
                 return [
                     'id' => $this->address->id,
@@ -35,13 +33,15 @@ class OrganizationResource extends JsonResource
                     'country' => $this->address->country,
                 ];
             }),
-            'users_count' => $this->when(isset($this->users_count), $this->users_count),
-            'locations_count' => $this->when(isset($this->locations_count), $this->locations_count),
-            'jobs_count' => $this->when(isset($this->jobs_count), $this->jobs_count),
+            'types' => $this->whenLoaded('typeAssignments', fn () => $this->typeAssignments->map(fn ($type) => [
+                'id' => $type->id,
+                'type' => $type->type,
+                'is_primary' => $type->is_primary,
+            ])->values()),
+            'contacts_count' => $this->when(isset($this->contacts_count), $this->contacts_count),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
             'deleted_at' => $this->when(isset($this->deleted_at), $this->deleted_at),
         ];
     }
 }
-

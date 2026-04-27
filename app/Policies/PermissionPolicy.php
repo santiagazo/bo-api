@@ -13,7 +13,9 @@ class PermissionPolicy
      */
     public function viewAny(User $user): bool
     {
-        return $user->can('list:roles');
+        $company = app(\App\Support\CompanyContext::class)->company();
+
+        return $company !== null && $user->hasPermissionForCompany('list:roles', $company);
     }
 
     /**
@@ -21,12 +23,14 @@ class PermissionPolicy
      */
     public function view(User $user, Permission $permission): bool
     {
-        return $user->can('view:roles');
+        $company = app(\App\Support\CompanyContext::class)->company();
+
+        return $company !== null && $user->hasPermissionForCompany('view:roles', $company);
     }
 
     /**
      * Permissions are managed via seeder, not via API.
-     * Only system admins could potentially create permissions.
+     * Only platform admins could potentially create permissions.
      */
     public function create(User $user): bool
     {
@@ -49,6 +53,4 @@ class PermissionPolicy
         return false;
     }
 }
-
-
 

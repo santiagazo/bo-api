@@ -2,14 +2,15 @@
 
 namespace App\Http\Controllers;
 
-use App\Enums\OrganizationType;
+use App\Enums\MembershipScope;
+use App\Enums\MembershipStatus;
 use App\Http\Resources\UserResource;
-use App\Models\Organization;
+use App\Models\Membership;
 use App\Models\Role;
 use App\Models\User;
 use App\Rules\ValidPhoneNumber;
 use App\Services\PhoneService;
-use App\Support\TenantContext;
+use App\Support\CompanyContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -20,44 +21,39 @@ use Illuminate\Validation\ValidationException;
 
 class UserController extends Controller
 {
-    protected PhoneService $phoneService;
+    public function __construct(
+        protected PhoneService $phoneService
+    ) {}
 
-    public function __construct(PhoneService $phoneService)
-    {
-        $this->phoneService = $phoneService;
-    }
-
-    /**
-     * Display a listing of users.
-     */
     public function index(Request $request): AnonymousResourceCollection
     {
         $this->authorize('viewAny', User::class);
 
+        $companyId = app(CompanyContext::class)->companyId();
+
         $query = User::query()
-            ->with(['organization', 'roles.permissions']);
+            ->with([
+                'memberships.company.address',
+                'memberships.roles.permissions',
+            ])
+            ->whereHas('memberships', function ($membershipQuery) use ($companyId) {
+                $membershipQuery->where('scope_type', MembershipScope::Company)
+                    ->where('status', MembershipStatus::Active)
+                    ->where('company_id', $companyId);
+            });
 
-        $tenantOrganizationId = app(TenantContext::class)->organizationId();
-        if ($tenantOrganizationId && ! $request->user()->hasGlobalAccess()) {
-            $query->where('organization_id', $tenantOrganizationId);
-        } elseif ($tenantOrganizationId && ! $request->boolean('include_all')) {
-            $query->where('organization_id', $tenantOrganizationId);
-        } elseif ($request->has('organization_id')) {
-            $query->where('organization_id', $request->integer('organization_id'));
-        }
-
-        // Search by name or email
-        if ($request->has('search')) {
-            $query->where(function ($q) use ($request) {
-                $q->where('name', 'ilike', "%{$request->search}%")
-                    ->orWhere('email', 'ilike', "%{$request->search}%");
+        if ($request->filled('search')) {
+            $search = $request->string('search');
+            $query->where(function ($userQuery) use ($search) {
+                $userQuery->where('name', 'ilike', "%{$search}%")
+                    ->orWhere('email', 'ilike', "%{$search}%");
             });
         }
 
-        // Filter by role
-        if ($request->has('role')) {
-            $query->whereHas('roles', function ($q) use ($request) {
-                $q->where('name', $request->role);
+        if ($request->filled('role')) {
+            $roleName = $request->string('role');
+            $query->whereHas('memberships.roles', function ($roleQuery) use ($roleName) {
+                $roleQuery->where('name', $roleName);
             });
         }
 
@@ -66,32 +62,27 @@ class UserController extends Controller
         return UserResource::collection($users);
     }
 
-    /**
-     * Store a newly created user.
-     */
     public function store(Request $request): JsonResponse
     {
         $this->authorize('create', User::class);
 
+        $companyId = app(CompanyContext::class)->companyId();
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'string', 'email', 'max:255', 'unique:users'],
-            'phone' => ['required', 'string', new ValidPhoneNumber($request->input('phone_country_code', 'US'))],
+            'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email'],
+            'phone' => ['nullable', 'string', new ValidPhoneNumber],
             'phone_country_code' => ['sometimes', 'string', 'max:5'],
             'password' => ['required', 'string', 'min:6'],
-            'organization_id' => ['sometimes', 'exists:organizations,id'],
             'roles' => ['sometimes', 'array'],
             'roles.*' => ['string', 'exists:roles,name'],
         ]);
 
-        $organizationId = $this->resolveTargetOrganizationId($request, $validated['organization_id'] ?? null);
-        $this->assertAssignableRoles($request, $validated['roles'] ?? [], $organizationId);
+        $roles = $this->resolveAssignableRoles($validated['roles'] ?? [], $companyId);
 
-        $user = DB::transaction(function () use ($validated, $organizationId) {
-            $formattedPhone = $this->phoneService->formatToE164(
-                $validated['phone'],
-                $validated['phone_country_code'] ?? 'US'
-            );
+        $user = DB::transaction(function () use ($validated, $companyId, $roles) {
+            $formattedPhone = ! empty($validated['phone'])
+                ? $this->phoneService->formatToE164($validated['phone'], $validated['phone_country_code'] ?? 'US')
+                : null;
 
             $user = User::create([
                 'name' => $validated['name'],
@@ -99,212 +90,207 @@ class UserController extends Controller
                 'phone' => $formattedPhone,
                 'phone_country_code' => $validated['phone_country_code'] ?? 'US',
                 'password' => Hash::make($validated['password']),
-                'organization_id' => $organizationId,
+                'email_verified_at' => now(),
             ]);
 
-            if (! empty($validated['roles'])) {
-                $user->syncRoles($validated['roles']);
+            $membership = Membership::create([
+                'user_id' => $user->id,
+                'scope_type' => MembershipScope::Company,
+                'status' => MembershipStatus::Active,
+                'company_id' => $companyId,
+                'is_primary' => true,
+            ]);
+
+            if ($roles->isNotEmpty()) {
+                $membership->syncRoles($roles->pluck('name')->all());
             }
 
             return $user;
         });
 
         return response()->json(
-            new UserResource($user->load(['organization', 'roles.permissions'])),
+            new UserResource($user->load(['memberships.company.address', 'memberships.roles.permissions'])),
             201
         );
     }
 
-    /**
-     * Display the specified user.
-     */
     public function show(User $user): JsonResponse
     {
         $this->authorize('view', $user);
 
         return response()->json(
-            new UserResource($user->load(['organization', 'roles.permissions']))
+            new UserResource($user->load(['memberships.company.address', 'memberships.roles.permissions']))
         );
     }
 
-    /**
-     * Update the specified user.
-     */
     public function update(Request $request, User $user): JsonResponse
     {
         $this->authorize('update', $user);
 
+        $companyId = app(CompanyContext::class)->companyId();
         $validated = $request->validate([
             'name' => ['sometimes', 'string', 'max:255'],
-            'email' => ['sometimes', 'string', 'email', 'max:255', Rule::unique('users')->ignore($user->id)],
-            'phone' => ['sometimes', 'string', new ValidPhoneNumber($request->input('phone_country_code', 'US'))],
+            'email' => ['sometimes', 'string', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
+            'phone' => ['sometimes', 'nullable', 'string', new ValidPhoneNumber],
             'phone_country_code' => ['sometimes', 'string', 'max:5'],
             'password' => ['sometimes', 'string', 'min:6'],
-            'organization_id' => ['sometimes', 'exists:organizations,id'],
             'roles' => ['sometimes', 'array'],
             'roles.*' => ['string', 'exists:roles,name'],
         ]);
 
-        $organizationId = array_key_exists('organization_id', $validated)
-            ? $this->resolveTargetOrganizationId($request, $validated['organization_id'])
-            : null;
-        $targetOrganizationId = $organizationId ?? $user->organization_id;
+        $membership = $user->memberships()
+            ->where('scope_type', MembershipScope::Company)
+            ->where('status', MembershipStatus::Active)
+            ->where('company_id', $companyId)
+            ->firstOrFail();
 
-        if (array_key_exists('roles', $validated)) {
-            $this->assertAssignableRoles($request, $validated['roles'], (int) $targetOrganizationId);
-        }
+        $roles = array_key_exists('roles', $validated)
+            ? $this->resolveAssignableRoles($validated['roles'], $companyId)
+            : collect();
 
-        DB::transaction(function () use ($user, $validated, $organizationId) {
-            $updateData = [];
+        DB::transaction(function () use ($user, $validated, $membership, $roles) {
+            $updates = [];
 
-            if (isset($validated['name'])) {
-                $updateData['name'] = $validated['name'];
-            }
-            if (isset($validated['email'])) {
-                $updateData['email'] = $validated['email'];
-            }
-            if (isset($validated['phone'])) {
-                $updateData['phone'] = $this->phoneService->formatToE164(
-                    $validated['phone'],
-                    $validated['phone_country_code'] ?? $user->phone_country_code ?? 'US'
-                );
-            }
-            if (isset($validated['phone_country_code'])) {
-                $updateData['phone_country_code'] = $validated['phone_country_code'];
-            }
-            if (isset($validated['password'])) {
-                $updateData['password'] = Hash::make($validated['password']);
-            }
-            if ($organizationId !== null) {
-                $updateData['organization_id'] = $organizationId;
+            foreach (['name', 'email', 'phone_country_code'] as $field) {
+                if (array_key_exists($field, $validated)) {
+                    $updates[$field] = $validated[$field];
+                }
             }
 
-            if (! empty($updateData)) {
-                $user->update($updateData);
+            if (array_key_exists('phone', $validated)) {
+                $updates['phone'] = $validated['phone']
+                    ? $this->phoneService->formatToE164(
+                        $validated['phone'],
+                        $validated['phone_country_code'] ?? $user->phone_country_code ?? 'US'
+                    )
+                    : null;
             }
 
-            if (array_key_exists('roles', $validated)) {
-                $user->syncRoles($validated['roles']);
+            if (array_key_exists('password', $validated)) {
+                $updates['password'] = Hash::make($validated['password']);
+            }
+
+            if ($updates !== []) {
+                $user->update($updates);
+            }
+
+            if ($roles->isNotEmpty() || array_key_exists('roles', $validated)) {
+                $membership->syncRoles($roles->pluck('name')->all());
             }
         });
 
         return response()->json(
-            new UserResource($user->fresh()->load(['organization', 'roles.permissions']))
+            new UserResource($user->fresh()->load(['memberships.company.address', 'memberships.roles.permissions']))
         );
     }
 
-    protected function resolveTargetOrganizationId(Request $request, ?int $requestedOrganizationId): int
-    {
-        $tenantOrganizationId = app(TenantContext::class)->organizationId();
-
-        if (! $request->user()->hasGlobalAccess()) {
-            return (int) $tenantOrganizationId;
-        }
-
-        return (int) ($requestedOrganizationId ?: $tenantOrganizationId);
-    }
-
-    /**
-     * @param  array<int, string>  $roleNames
-     */
-    protected function assertAssignableRoles(Request $request, array $roleNames, int $organizationId): void
-    {
-        if ($roleNames === []) {
-            return;
-        }
-
-        $roles = Role::query()
-            ->whereIn('name', array_values(array_unique($roleNames)))
-            ->get();
-
-        if ($roles->count() !== count(array_unique($roleNames))) {
-            throw ValidationException::withMessages([
-                'roles' => ['One or more selected roles do not exist.'],
-            ]);
-        }
-
-        $targetIsGlobal = Organization::query()
-            ->whereKey($organizationId)
-            ->where('type', OrganizationType::Global)
-            ->exists();
-        $actorHasGlobalAccess = $request->user()->hasGlobalAccess();
-
-        foreach ($roles as $role) {
-            if ($role->type?->isGlobalScope()) {
-                if (! $actorHasGlobalAccess || ! $targetIsGlobal) {
-                    throw ValidationException::withMessages([
-                        'roles' => ['Global roles can only be assigned to users in the Built Ox global organization.'],
-                    ]);
-                }
-
-                continue;
-            }
-
-            if ($role->organization_id !== null && (int) $role->organization_id !== $organizationId) {
-                throw ValidationException::withMessages([
-                    'roles' => ['Organization roles must belong to the same organization as the user.'],
-                ]);
-            }
-        }
-    }
-
-    /**
-     * Remove the specified user.
-     */
     public function destroy(User $user): JsonResponse
     {
         $this->authorize('delete', $user);
 
-        // Prevent deleting yourself
         if ($user->id === auth()->id()) {
             return response()->json([
                 'message' => 'You cannot delete your own account.',
             ], 403);
         }
 
-        $user->delete();
+        $company = app(CompanyContext::class)->company();
 
-        return response()->json(['message' => 'User deleted successfully.']);
+        abort_unless($company, 404);
+
+        DB::transaction(function () use ($user, $company) {
+            $membership = $user->memberships()
+                ->where('scope_type', MembershipScope::Company)
+                ->where('status', MembershipStatus::Active)
+                ->where('company_id', $company->id)
+                ->firstOrFail();
+
+            $wasPrimary = $membership->is_primary;
+
+            $membership->delete();
+
+            if ($wasPrimary) {
+                $nextPrimaryMembership = $user->memberships()
+                    ->where('scope_type', MembershipScope::Company)
+                    ->where('status', MembershipStatus::Active)
+                    ->whereNull('deleted_at')
+                    ->orderByDesc('is_primary')
+                    ->orderBy('id')
+                    ->first();
+
+                if ($nextPrimaryMembership) {
+                    $nextPrimaryMembership->update(['is_primary' => true]);
+                }
+            }
+
+            if (! $user->memberships()->whereNull('deleted_at')->exists()) {
+                $user->delete();
+            }
+        });
+
+        return response()->json(['message' => 'User removed from the active company successfully.']);
     }
 
-    /**
-     * Update the authenticated user's profile.
-     */
     public function updateProfile(Request $request): JsonResponse
     {
         $user = $request->user();
 
         $validated = $request->validate([
             'name' => ['sometimes', 'string', 'max:255'],
-            'email' => ['sometimes', 'string', 'email', 'max:255', Rule::unique('users')->ignore($user->id)],
-            'phone' => ['sometimes', 'string', new ValidPhoneNumber($request->input('phone_country_code', 'US'))],
+            'email' => ['sometimes', 'string', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
+            'phone' => ['sometimes', 'nullable', 'string', new ValidPhoneNumber],
             'phone_country_code' => ['sometimes', 'string', 'max:5'],
         ]);
 
         $updateData = [];
 
-        if (isset($validated['name'])) {
-            $updateData['name'] = $validated['name'];
-        }
-        if (isset($validated['email'])) {
-            $updateData['email'] = $validated['email'];
-        }
-        if (isset($validated['phone'])) {
-            $updateData['phone'] = $this->phoneService->formatToE164(
-                $validated['phone'],
-                $validated['phone_country_code'] ?? $user->phone_country_code ?? 'US'
-            );
-        }
-        if (isset($validated['phone_country_code'])) {
-            $updateData['phone_country_code'] = $validated['phone_country_code'];
+        foreach (['name', 'email', 'phone_country_code'] as $field) {
+            if (array_key_exists($field, $validated)) {
+                $updateData[$field] = $validated[$field];
+            }
         }
 
-        if (! empty($updateData)) {
+        if (array_key_exists('phone', $validated)) {
+            $updateData['phone'] = $validated['phone']
+                ? $this->phoneService->formatToE164(
+                    $validated['phone'],
+                    $validated['phone_country_code'] ?? $user->phone_country_code ?? 'US'
+                )
+                : null;
+        }
+
+        if ($updateData !== []) {
             $user->update($updateData);
         }
 
         return response()->json(
-            new UserResource($user->fresh()->load(['organization', 'roles.permissions']))
+            new UserResource($user->fresh()->load(['memberships.company.address', 'memberships.roles.permissions']))
         );
+    }
+
+    protected function resolveAssignableRoles(array $roleNames, int $companyId)
+    {
+        $uniqueNames = array_values(array_unique($roleNames));
+
+        if ($uniqueNames === []) {
+            return collect();
+        }
+
+        $roles = Role::query()
+            ->whereIn('name', $uniqueNames)
+            ->where('scope_type', 'company')
+            ->where(function ($roleQuery) use ($companyId) {
+                $roleQuery->whereNull('company_id')
+                    ->orWhere('company_id', $companyId);
+            })
+            ->get();
+
+        if ($roles->count() !== count($uniqueNames)) {
+            throw ValidationException::withMessages([
+                'roles' => ['One or more selected roles do not belong to the active company scope.'],
+            ]);
+        }
+
+        return $roles;
     }
 }

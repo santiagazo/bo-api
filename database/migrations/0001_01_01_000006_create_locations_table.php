@@ -6,32 +6,26 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
     {
         Schema::create('locations', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('organization_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('address_id')->constrained();
-            $table->string('name')->nullable();
+            $table->foreignId('company_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('address_id')->nullable()->constrained();
+            $table->string('name');
+            $table->string('code')->nullable();
             $table->string('phone')->nullable();
             $table->string('phone_country_code')->nullable();
             $table->string('email')->nullable();
-            $table->boolean('is_active')->default(true);
-            $table->boolean('is_default')->default(false);
+            $table->string('status')->default('active');
+            $table->string('timezone')->nullable();
             $table->timestamps();
             $table->softDeletes();
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::dropIfExists('locations');
     }
 };
-

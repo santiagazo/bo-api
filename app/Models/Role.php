@@ -2,7 +2,7 @@
 
 namespace App\Models;
 
-use App\Enums\RoleType;
+use App\Enums\RoleScope;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
 use Spatie\Permission\Models\Role as SpatieRole;
@@ -12,27 +12,24 @@ class Role extends SpatieRole
     protected $fillable = [
         'name',
         'guard_name',
-        'organization_id',
-        'type',
+        'company_id',
+        'scope_type',
         'display_name',
     ];
 
     protected $casts = [
-        'type' => RoleType::class,
+        'scope_type' => RoleScope::class,
     ];
 
-    public function organization(): BelongsTo
+    public function company(): BelongsTo
     {
-        return $this->belongsTo(Organization::class);
+        return $this->belongsTo(Company::class);
     }
 
-    /**
-     * Override the users relationship to use our User model explicitly.
-     */
-    public function users(): MorphToMany
+    public function memberships(): MorphToMany
     {
         return $this->morphedByMany(
-            User::class,
+            Membership::class,
             'model',
             config('permission.table_names.model_has_roles'),
             config('permission.column_names.role_pivot_key') ?: 'role_id',

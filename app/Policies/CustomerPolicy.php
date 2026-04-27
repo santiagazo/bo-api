@@ -2,64 +2,56 @@
 
 namespace App\Policies;
 
+use App\Models\Company;
 use App\Models\Customer;
 use App\Models\User;
+use App\Support\CompanyContext;
 
 class CustomerPolicy
 {
-    /**
-     * Determine whether the user can view any models.
-     */
     public function viewAny(User $user): bool
     {
-        return $user->can('list:customers');
+        $company = app(CompanyContext::class)->company();
+
+        return $company !== null && $user->hasPermissionForCompany('list:customers', $company);
     }
 
-    /**
-     * Determine whether the user can view the model.
-     */
     public function view(User $user, Customer $customer): bool
     {
-        return $user->can('view:customers') && $user->canAccessOrganization($customer->organization_id);
+        $company = app(CompanyContext::class)->company();
+
+        return $company !== null
+            && $this->matchesCompany($customer, $company)
+            && $user->hasPermissionForCompany('view:customers', $company);
     }
 
-    /**
-     * Determine whether the user can create models.
-     */
     public function create(User $user): bool
     {
-        return $user->can('create:customers');
+        $company = app(CompanyContext::class)->company();
+
+        return $company !== null && $user->hasPermissionForCompany('create:customers', $company);
     }
 
-    /**
-     * Determine whether the user can update the model.
-     */
     public function update(User $user, Customer $customer): bool
     {
-        return $user->can('edit:customers') && $user->canAccessOrganization($customer->organization_id);
+        $company = app(CompanyContext::class)->company();
+
+        return $company !== null
+            && $this->matchesCompany($customer, $company)
+            && $user->hasPermissionForCompany('edit:customers', $company);
     }
 
-    /**
-     * Determine whether the user can delete the model.
-     */
     public function delete(User $user, Customer $customer): bool
     {
-        return $user->can('delete:customers') && $user->canAccessOrganization($customer->organization_id);
+        $company = app(CompanyContext::class)->company();
+
+        return $company !== null
+            && $this->matchesCompany($customer, $company)
+            && $user->hasPermissionForCompany('delete:customers', $company);
     }
 
-    /**
-     * Determine whether the user can restore the model.
-     */
-    public function restore(User $user, Customer $customer): bool
+    protected function matchesCompany(Customer $customer, Company $company): bool
     {
-        return $user->can('restore:customers') && $user->canAccessOrganization($customer->organization_id);
-    }
-
-    /**
-     * Determine whether the user can permanently delete the model.
-     */
-    public function forceDelete(User $user, Customer $customer): bool
-    {
-        return $user->can('destroy:customers') && $user->canAccessOrganization($customer->organization_id);
+        return $customer->company_id === $company->id;
     }
 }

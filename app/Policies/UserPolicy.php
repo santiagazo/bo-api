@@ -2,78 +2,73 @@
 
 namespace App\Policies;
 
+use App\Enums\MembershipScope;
+use App\Enums\MembershipStatus;
+use App\Models\Company;
 use App\Models\User;
+use App\Support\CompanyContext;
 
 class UserPolicy
 {
-    /**
-     * Determine whether the user can view any models.
-     */
     public function viewAny(User $authUser): bool
     {
-        return $authUser->can('list:users');
+        $company = app(CompanyContext::class)->company();
+
+        return $company !== null && $authUser->hasPermissionForCompany('list:users', $company);
     }
 
-    /**
-     * Determine whether the user can view the model.
-     */
     public function view(User $authUser, User $user): bool
     {
-        // Users can always view themselves
         if ($authUser->id === $user->id) {
             return true;
         }
 
-        return $authUser->can('view:users') && $authUser->canAccessOrganization($user->organization_id);
+        $company = app(CompanyContext::class)->company();
+
+        return $company !== null
+            && $this->belongsToCompany($user, $company)
+            && $authUser->hasPermissionForCompany('view:users', $company);
     }
 
-    /**
-     * Determine whether the user can create models.
-     */
     public function create(User $authUser): bool
     {
-        return $authUser->can('create:users');
+        $company = app(CompanyContext::class)->company();
+
+        return $company !== null && $authUser->hasPermissionForCompany('create:users', $company);
     }
 
-    /**
-     * Determine whether the user can update the model.
-     */
     public function update(User $authUser, User $user): bool
     {
-        // Users can always update themselves (profile)
         if ($authUser->id === $user->id) {
             return true;
         }
 
-        return $authUser->can('edit:users') && $authUser->canAccessOrganization($user->organization_id);
+        $company = app(CompanyContext::class)->company();
+
+        return $company !== null
+            && $this->belongsToCompany($user, $company)
+            && $authUser->hasPermissionForCompany('edit:users', $company);
     }
 
-    /**
-     * Determine whether the user can delete the model.
-     */
     public function delete(User $authUser, User $user): bool
     {
-        // Users cannot delete themselves
         if ($authUser->id === $user->id) {
             return false;
         }
 
-        return $authUser->can('delete:users') && $authUser->canAccessOrganization($user->organization_id);
+        $company = app(CompanyContext::class)->company();
+
+        return $company !== null
+            && $this->belongsToCompany($user, $company)
+            && $authUser->hasPermissionForCompany('delete:users', $company);
     }
 
-    /**
-     * Determine whether the user can restore the model.
-     */
-    public function restore(User $authUser, User $user): bool
+    protected function belongsToCompany(User $user, Company $company): bool
     {
-        return $authUser->can('restore:users') && $authUser->canAccessOrganization($user->organization_id);
-    }
-
-    /**
-     * Determine whether the user can permanently delete the model.
-     */
-    public function forceDelete(User $authUser, User $user): bool
-    {
-        return $authUser->can('destroy:users') && $authUser->canAccessOrganization($user->organization_id);
+        return $user->memberships()
+            ->where('scope_type', MembershipScope::Company)
+            ->where('status', MembershipStatus::Active)
+            ->where('company_id', $company->id)
+            ->exists();
     }
 }

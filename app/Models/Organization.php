@@ -2,68 +2,40 @@
 
 namespace App\Models;
 
-use App\Enums\OrganizationType;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Organization extends BaseModel
 {
-    use HasFactory, SoftDeletes;
-
     protected $fillable = [
-        'name',
-        'type',
-        'phone',
-        'email',
+        'company_id',
+        'display_name',
+        'legal_name',
+        'status',
+        'website_url',
+        'primary_email',
+        'primary_phone',
         'phone_country_code',
         'address_id',
-        'referral_fee_percentage',
     ];
-
-    protected $casts = [
-        'type' => OrganizationType::class,
-        'referral_fee_percentage' => 'decimal:2',
-    ];
-
-    public function isGlobal(): bool
-    {
-        return $this->type === OrganizationType::Global;
-    }
 
     public function address(): BelongsTo
     {
         return $this->belongsTo(Address::class);
     }
 
-    public function users(): HasMany
+    public function company(): BelongsTo
     {
-        return $this->hasMany(User::class);
+        return $this->belongsTo(Company::class);
     }
 
-    public function customers(): HasMany
+    public function typeAssignments(): HasMany
     {
-        return $this->hasMany(Customer::class);
+        return $this->hasMany(OrganizationTypeAssignment::class);
     }
 
-    public function jobs(): HasMany
+    public function contacts(): HasMany
     {
-        return $this->hasMany(Job::class);
-    }
-
-    public function referredJobs(): HasMany
-    {
-        return $this->hasMany(Job::class, 'referred_by_organization_id');
-    }
-
-    public function locations(): HasMany
-    {
-        return $this->hasMany(Location::class);
-    }
-
-    public function userGroups(): HasMany
-    {
-        return $this->hasMany(UserGroup::class);
+        return $this->hasMany(OrganizationContact::class);
     }
 }

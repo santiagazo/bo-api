@@ -1,5 +1,6 @@
 <?php
 
+use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -19,8 +20,16 @@ return Application::configure(basePath: dirname(__DIR__))
             \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
         ]);
 
+        $middleware->redirectGuestsTo(function (Request $request) {
+            if ($request->is('api/*') || $request->expectsJson()) {
+                return null;
+            }
+
+            return '/login';
+        });
+
         $middleware->alias([
-            'tenant.organization' => \App\Http\Middleware\ResolveTenantOrganization::class,
+            'company.context' => \App\Http\Middleware\ResolveCompanyContext::class,
         ]);
 
         // Trust proxies (for load balancers, App Runner, etc.)
@@ -32,6 +41,14 @@ return Application::configure(basePath: dirname(__DIR__))
         );
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        $exceptions->render(function (AuthenticationException $e, Request $request) {
+            if ($request->is('api/*') || $request->expectsJson()) {
+                return response()->json([
+                    'message' => $e->getMessage(),
+                ], 401);
+            }
+        });
+
         // Return JSON for 404 errors on API routes
         $exceptions->render(function (NotFoundHttpException $e, Request $request) {
             if ($request->is('api/*') || $request->expectsJson()) {

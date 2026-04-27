@@ -2,64 +2,56 @@
 
 namespace App\Policies;
 
+use App\Models\Company;
 use App\Models\Job;
 use App\Models\User;
+use App\Support\CompanyContext;
 
 class JobPolicy
 {
-    /**
-     * Determine whether the user can view any models.
-     */
     public function viewAny(User $user): bool
     {
-        return $user->can('list:jobs');
+        $company = app(CompanyContext::class)->company();
+
+        return $company !== null && $user->hasPermissionForCompany('list:jobs', $company);
     }
 
-    /**
-     * Determine whether the user can view the model.
-     */
     public function view(User $user, Job $job): bool
     {
-        return $user->can('view:jobs') && $user->canAccessOrganization($job->organization_id);
+        $company = app(CompanyContext::class)->company();
+
+        return $company !== null
+            && $this->matchesCompany($job, $company)
+            && $user->hasPermissionForCompany('view:jobs', $company);
     }
 
-    /**
-     * Determine whether the user can create models.
-     */
     public function create(User $user): bool
     {
-        return $user->can('create:jobs');
+        $company = app(CompanyContext::class)->company();
+
+        return $company !== null && $user->hasPermissionForCompany('create:jobs', $company);
     }
 
-    /**
-     * Determine whether the user can update the model.
-     */
     public function update(User $user, Job $job): bool
     {
-        return $user->can('edit:jobs') && $user->canAccessOrganization($job->organization_id);
+        $company = app(CompanyContext::class)->company();
+
+        return $company !== null
+            && $this->matchesCompany($job, $company)
+            && $user->hasPermissionForCompany('edit:jobs', $company);
     }
 
-    /**
-     * Determine whether the user can delete the model.
-     */
     public function delete(User $user, Job $job): bool
     {
-        return $user->can('delete:jobs') && $user->canAccessOrganization($job->organization_id);
+        $company = app(CompanyContext::class)->company();
+
+        return $company !== null
+            && $this->matchesCompany($job, $company)
+            && $user->hasPermissionForCompany('delete:jobs', $company);
     }
 
-    /**
-     * Determine whether the user can restore the model.
-     */
-    public function restore(User $user, Job $job): bool
+    protected function matchesCompany(Job $job, Company $company): bool
     {
-        return $user->can('restore:jobs') && $user->canAccessOrganization($job->organization_id);
-    }
-
-    /**
-     * Determine whether the user can permanently delete the model.
-     */
-    public function forceDelete(User $user, Job $job): bool
-    {
-        return $user->can('destroy:jobs') && $user->canAccessOrganization($job->organization_id);
+        return $job->company_id === $company->id;
     }
 }

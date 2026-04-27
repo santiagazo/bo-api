@@ -2,17 +2,13 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
-use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Customer extends BaseModel
 {
-    use HasFactory, SoftDeletes;
-
     protected $fillable = [
-        'organization_id',
+        'company_id',
         'name',
         'email',
         'phone',
@@ -20,9 +16,9 @@ class Customer extends BaseModel
         'address_id',
     ];
 
-    public function organization(): BelongsTo
+    public function company(): BelongsTo
     {
-        return $this->belongsTo(Organization::class);
+        return $this->belongsTo(Company::class);
     }
 
     public function address(): BelongsTo

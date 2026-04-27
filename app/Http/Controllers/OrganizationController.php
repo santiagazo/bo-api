@@ -8,9 +8,11 @@ use App\Http\Resources\OrganizationResource;
 use App\Models\Address;
 use App\Models\Organization;
 use App\Services\PhoneService;
-use App\Support\TenantContext;
+use App\Support\CompanyContext;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\DB;
 
 class OrganizationController extends Controller
 {
@@ -18,177 +20,141 @@ class OrganizationController extends Controller
         protected PhoneService $phoneService
     ) {}
 
-    /**
-     * Display a listing of organizations.
-     */
-    public function index(): AnonymousResourceCollection
+    public function index(Request $request): AnonymousResourceCollection
     {
         $this->authorize('viewAny', Organization::class);
 
-        $query = Organization::query()->withCount(['users', 'locations', 'jobs']);
+        $companyId = app(CompanyContext::class)->companyId();
 
-        $user = request()->user();
-        if (! $user->hasGlobalAccess()) {
-            $query->whereKey(app(TenantContext::class)->organizationId());
-        }
+        $query = Organization::query()
+            ->with(['address', 'typeAssignments'])
+            ->withCount('contacts')
+            ->where('company_id', $companyId);
 
-        // Filter by type
-        if (request()->has('type')) {
-            $query->where('type', request()->type);
-        }
-
-        // Search by name or email
-        if (request()->has('search')) {
-            $query->where(function ($q) {
-                $q->where('name', 'ilike', '%'.request()->search.'%')
-                    ->orWhere('email', 'ilike', '%'.request()->search.'%');
+        if ($request->filled('type')) {
+            $query->whereHas('typeAssignments', function ($typeQuery) use ($request) {
+                $typeQuery->where('type', $request->string('type'));
             });
         }
 
-        $organizations = $query->orderBy('name')->paginate(50);
+        if ($request->filled('search')) {
+            $search = $request->string('search');
+            $query->where(function ($organizationQuery) use ($search) {
+                $organizationQuery->where('display_name', 'ilike', "%{$search}%")
+                    ->orWhere('legal_name', 'ilike', "%{$search}%")
+                    ->orWhere('primary_email', 'ilike', "%{$search}%");
+            });
+        }
+
+            $organizations = $query->orderBy('display_name')->paginate(50);
 
         return OrganizationResource::collection($organizations);
     }
 
-    public function current(): OrganizationResource
-    {
-        $organization = app(TenantContext::class)->organization();
-
-        abort_unless($organization, 404);
-
-        $this->authorize('view', $organization);
-
-        $organization->load(['address']);
-        $organization->loadCount(['users', 'locations', 'jobs']);
-
-        return new OrganizationResource($organization);
-    }
-
-    /**
-     * Store a newly created organization.
-     */
     public function store(StoreOrganizationRequest $request): OrganizationResource
     {
+        $companyId = app(CompanyContext::class)->companyId();
         $validated = $request->validated();
 
-        // Handle phone number formatting
-        if (isset($validated['phone'])) {
-            $phoneCountryCode = $validated['phone_country_code'] ?? 'US';
-            $formattedPhone = $this->phoneService->formatToE164($validated['phone'], $phoneCountryCode);
-            if ($formattedPhone) {
-                $validated['phone'] = $formattedPhone;
-            } else {
-                unset($validated['phone']);
+        $organization = DB::transaction(function () use ($validated, $companyId) {
+            if (isset($validated['primary_phone'])) {
+                $validated['primary_phone'] = $this->phoneService->formatToE164(
+                    $validated['primary_phone'],
+                    $validated['phone_country_code'] ?? 'US'
+                );
             }
-        }
 
-        // Handle address creation if provided
-        if (isset($validated['address'])) {
-            $address = Address::create($validated['address']);
-            $validated['address_id'] = $address->id;
-            unset($validated['address']);
-        }
+            if (isset($validated['address'])) {
+                $address = Address::create($validated['address']);
+                $validated['address_id'] = $address->id;
+                unset($validated['address']);
+            }
 
-        $organization = Organization::create($validated);
+            $types = $validated['types'] ?? [];
+            unset($validated['types']);
 
-        // New tenants need at least one operating location before job workflows start.
-        $organization->loadCount(['users', 'locations', 'jobs']);
+            $organization = Organization::create([
+                ...$validated,
+                'company_id' => $companyId,
+            ]);
 
-        return new OrganizationResource($organization);
+            $this->syncTypes($organization, $types);
+
+            return $organization;
+        });
+
+        return new OrganizationResource(
+            $organization->load(['company', 'address', 'typeAssignments'])->loadCount('contacts')
+        );
     }
 
-    /**
-     * Display the specified organization.
-     */
     public function show(Organization $organization): OrganizationResource
     {
         $this->authorize('view', $organization);
 
-        $organization->load(['address']);
-        $organization->loadCount(['users', 'locations', 'jobs']);
-
-        return new OrganizationResource($organization);
+        return new OrganizationResource(
+            $organization->load(['company', 'address', 'typeAssignments'])->loadCount('contacts')
+        );
     }
 
-    /**
-     * Update the specified organization.
-     */
     public function update(UpdateOrganizationRequest $request, Organization $organization): OrganizationResource
     {
         $validated = $request->validated();
 
-        // Handle phone number formatting
-        if (isset($validated['phone'])) {
-            $phoneCountryCode = $validated['phone_country_code'] ?? $organization->phone_country_code ?? 'US';
-            $formattedPhone = $this->phoneService->formatToE164($validated['phone'], $phoneCountryCode);
-            if ($formattedPhone) {
-                $validated['phone'] = $formattedPhone;
-            } else {
-                unset($validated['phone']);
+        DB::transaction(function () use ($organization, $validated) {
+            if (isset($validated['primary_phone'])) {
+                $validated['primary_phone'] = $this->phoneService->formatToE164(
+                    $validated['primary_phone'],
+                    $validated['phone_country_code'] ?? $organization->phone_country_code ?? 'US'
+                );
             }
-        }
 
-        // Handle address creation/update if provided
-        if (isset($validated['address'])) {
-            if ($organization->address_id) {
-                // Update existing address
-                $organization->address->update($validated['address']);
-            } else {
-                // Create new address
-                $address = Address::create($validated['address']);
-                $validated['address_id'] = $address->id;
+            if (isset($validated['address'])) {
+                if ($organization->address_id && $organization->address) {
+                    $organization->address->update($validated['address']);
+                } else {
+                    $address = Address::create($validated['address']);
+                    $validated['address_id'] = $address->id;
+                }
+
+                unset($validated['address']);
             }
-            unset($validated['address']);
-        }
 
-        $organization->update($validated);
+            $types = $validated['types'] ?? null;
+            unset($validated['types']);
 
-        $organization->load(['address']);
-        $organization->loadCount(['users', 'locations', 'jobs']);
+            if ($validated !== []) {
+                $organization->update($validated);
+            }
 
-        return new OrganizationResource($organization);
+            if ($types !== null) {
+                $this->syncTypes($organization, $types);
+            }
+        });
+
+        return new OrganizationResource(
+            $organization->fresh()->load(['company', 'address', 'typeAssignments'])->loadCount('contacts')
+        );
     }
 
-    /**
-     * Remove the specified organization.
-     */
     public function destroy(Organization $organization): JsonResponse
     {
         $this->authorize('delete', $organization);
 
         $organization->delete();
 
-        return response()->json(['message' => 'Organization deleted successfully']);
+        return response()->json(['message' => 'Organization deleted successfully.']);
     }
 
-    /**
-     * Restore the specified organization.
-     */
-    public function restore(int $id): OrganizationResource
+    protected function syncTypes(Organization $organization, array $types): void
     {
-        $organization = Organization::withTrashed()->findOrFail($id);
+        $organization->typeAssignments()->delete();
 
-        $this->authorize('restore', $organization);
-
-        $organization->restore();
-
-        $organization->load(['address']);
-        $organization->loadCount(['users', 'locations', 'jobs']);
-
-        return new OrganizationResource($organization);
-    }
-
-    /**
-     * Permanently delete the specified organization.
-     */
-    public function forceDelete(int $id): JsonResponse
-    {
-        $organization = Organization::withTrashed()->findOrFail($id);
-
-        $this->authorize('forceDelete', $organization);
-
-        $organization->forceDelete();
-
-        return response()->json(['message' => 'Organization permanently deleted']);
+        foreach ($types as $index => $type) {
+            $organization->typeAssignments()->create([
+                'type' => $type['type'],
+                'is_primary' => $type['is_primary'] ?? $index === 0,
+            ]);
+        }
     }
 }

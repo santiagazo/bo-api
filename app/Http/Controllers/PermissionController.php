@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Resources\PermissionResource;
 use App\Models\Permission;
+use App\Support\CompanyContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -19,6 +20,11 @@ class PermissionController extends Controller
         $this->authorize('viewAny', Permission::class);
 
         $query = Permission::query();
+        $allowedPermissionNames = $this->assignablePermissionNames($request);
+
+        if ($allowedPermissionNames !== null) {
+            $query->whereIn('name', $allowedPermissionNames);
+        }
 
         // Search by name
         if ($request->has('search')) {
@@ -50,7 +56,13 @@ class PermissionController extends Controller
     {
         $this->authorize('viewAny', Permission::class);
 
-        $permissions = Permission::orderBy('name')->get();
+        $permissions = Permission::query()
+            ->when(
+                $this->assignablePermissionNames($request) !== null,
+                fn ($query) => $query->whereIn('name', $this->assignablePermissionNames($request))
+            )
+            ->orderBy('name')
+            ->get();
 
         // Group by subject (the part after the colon)
         $grouped = $permissions->groupBy(function ($permission) {
@@ -65,7 +77,20 @@ class PermissionController extends Controller
 
         return response()->json($grouped);
     }
-}
 
+    protected function assignablePermissionNames(Request $request): ?array
+    {
+        $company = app(CompanyContext::class)->company();
+
+        if (! $company) {
+            return null;
+        }
+
+        return $request->user()
+            ?->permissionsForUiContext($company)
+            ->values()
+            ->all();
+    }
+}
 
 

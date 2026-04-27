@@ -2,10 +2,9 @@
 
 namespace App\Http\Requests;
 
-use App\Enums\OrganizationType;
+use App\Models\Organization;
 use App\Rules\ValidPhoneNumber;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rules\Enum;
 
 class UpdateOrganizationRequest extends FormRequest
 {
@@ -17,15 +16,17 @@ class UpdateOrganizationRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'name' => ['sometimes', 'required', 'string', 'max:255'],
-            'type' => ['sometimes', 'required', new Enum(OrganizationType::class)],
-            'phone' => ['nullable', 'string', 'max:20', new ValidPhoneNumber],
-            'email' => ['nullable', 'string', 'email', 'max:255'],
+            'display_name' => ['sometimes', 'required', 'string', 'max:255'],
+            'legal_name' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'status' => ['sometimes', 'required', 'string', 'max:50'],
+            'website_url' => ['sometimes', 'nullable', 'url', 'max:255'],
+            'primary_email' => ['sometimes', 'nullable', 'email', 'max:255'],
+            'primary_phone' => ['sometimes', 'nullable', 'string', 'max:20', new ValidPhoneNumber],
             'phone_country_code' => ['sometimes', 'nullable', 'string', 'in:US,CA'],
-            'address_id' => ['nullable', 'integer', 'exists:addresses,id'],
-            'referral_fee_percentage' => ['nullable', 'numeric', 'min:0', 'max:100'],
-            
-            // Address fields (for creating/updating inline)
+            'address_id' => ['sometimes', 'nullable', 'integer', 'exists:addresses,id'],
+            'types' => ['sometimes', 'array'],
+            'types.*.type' => ['required_with:types', 'string', 'max:100'],
+            'types.*.is_primary' => ['sometimes', 'boolean'],
             'address' => ['sometimes', 'array'],
             'address.name' => ['sometimes', 'nullable', 'string', 'max:255'],
             'address.line1' => ['sometimes', 'nullable', 'string', 'max:255'],
@@ -41,8 +42,6 @@ class UpdateOrganizationRequest extends FormRequest
     {
         return [
             'phone_country_code.in' => 'Only US and CA phone numbers are supported.',
-            'referral_fee_percentage.max' => 'Referral fee percentage cannot exceed 100%.',
         ];
     }
 }
-
