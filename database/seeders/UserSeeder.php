@@ -5,6 +5,7 @@ namespace Database\Seeders;
 use App\Enums\MembershipScope;
 use App\Enums\MembershipStatus;
 use App\Models\Company;
+use App\Models\Location;
 use App\Models\Membership;
 use App\Models\User;
 use App\Services\PhoneService;
@@ -94,6 +95,21 @@ class UserSeeder extends Seeder
             $attachMembership($admin, MembershipScope::Company, $company->id, true, ['company:admin']);
             $attachMembership($support, MembershipScope::Company, $company->id, true, ['company:support']);
             $attachMembership($readonly, MembershipScope::Company, $company->id, true, ['company:readonly']);
+
+            $readonly->locations()->detach();
+
+            $locations = Location::query()
+                ->where('company_id', $company->id)
+                ->where('status', 'active')
+                ->orderByRaw("CASE WHEN code = 'HQ' THEN 0 ELSE 1 END")
+                ->orderBy('name')
+                ->get();
+
+            if ($locations->count() > 1) {
+                $readonly->locations()->sync([
+                    $locations->first()->id,
+                ]);
+            }
         });
     }
 }

@@ -9,12 +9,18 @@ class LocationResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
+        $color = $this->resource->resolvedColor();
+
         return [
             'id' => $this->id,
             'company_id' => $this->company_id,
             'address_id' => $this->address_id,
             'name' => $this->name,
             'code' => $this->code,
+            'sort_order' => $this->sort_order,
+            'color' => $this->color,
+            'color_label' => $color?->label(),
+            'color_hex' => $color?->hex(),
             'phone' => $this->phone,
             'phone_country_code' => $this->phone_country_code,
             'email' => $this->email,

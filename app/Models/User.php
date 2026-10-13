@@ -5,16 +5,15 @@ namespace App\Models;
 use App\Enums\MembershipScope;
 use App\Enums\MembershipStatus;
 use App\Support\CompanyContext;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\SoftDeletes;
-use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Collection;
 use Laravel\Sanctum\HasApiTokens;
 
-class User extends Authenticatable
+class User extends BaseAuthenticatable
 {
-    use HasApiTokens, Notifiable, SoftDeletes;
+    use HasApiTokens, Notifiable;
 
     /**
      * The attributes that are mass assignable.
@@ -62,6 +61,12 @@ class User extends Authenticatable
         return $this->hasMany(Membership::class);
     }
 
+    public function locations(): BelongsToMany
+    {
+        return $this->belongsToMany(Location::class)
+            ->withTimestamps();
+    }
+
     public function companyMemberships(): HasMany
     {
         return $this->memberships()
@@ -81,6 +86,7 @@ class User extends Authenticatable
         return $query->with([
             'memberships.company.address',
             'memberships.roles.permissions',
+            'locations',
         ]);
     }
 
@@ -204,6 +210,100 @@ class User extends Authenticatable
             ->where('scope_type', MembershipScope::Company)
             ->where('status', MembershipStatus::Active)
             ->where('company_id', $companyId)
+            ->exists();
+    }
+
+    public function hasLocationRestrictions(?Company $company = null): bool
+    {
+        $company ??= app(CompanyContext::class)->company();
+
+        if (! $company) {
+            return false;
+        }
+
+        return $this->locations()
+            ->where('company_id', $company->id)
+            ->exists();
+    }
+
+    public function assignedLocations(?Company $company = null): Collection
+    {
+        $company ??= app(CompanyContext::class)->company();
+
+        if (! $company) {
+            return collect();
+        }
+
+        return $this->locations()
+            ->where('company_id', $company->id)
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->get();
+    }
+
+    public function accessibleLocations(?Company $company = null, bool $activeOnly = false): Collection
+    {
+        $company ??= app(CompanyContext::class)->company();
+
+        if (! $company) {
+            return collect();
+        }
+
+        $query = Location::query()
+            ->where('company_id', $company->id)
+            ->orderBy('sort_order')
+            ->orderBy('name');
+
+        if ($activeOnly) {
+            $query->where('status', 'active');
+        }
+
+        if ($this->hasLocationRestrictions($company)) {
+            $assignedLocationIds = $this->assignedLocations($company)->pluck('id')->all();
+            $query->whereIn('id', $assignedLocationIds);
+        }
+
+        return $query->get();
+    }
+
+    public function accessibleLocationIds(?Company $company = null, bool $activeOnly = false): Collection
+    {
+        return $this->accessibleLocations($company, $activeOnly)
+            ->pluck('id')
+            ->values();
+    }
+
+    public function canAccessLocation(Location|int|null $location, ?Company $company = null): bool
+    {
+        if (! $location) {
+            return $this->canAccessCompany($company);
+        }
+
+        $locationModel = $location instanceof Location
+            ? $location
+            : Location::query()->find($location);
+
+        if (! $locationModel) {
+            return false;
+        }
+
+        $company ??= $locationModel->company;
+
+        if (! $company || $locationModel->company_id !== $company->id) {
+            return false;
+        }
+
+        if (! $this->canAccessCompany($company)) {
+            return false;
+        }
+
+        if (! $this->hasLocationRestrictions($company)) {
+            return true;
+        }
+
+        return $this->locations()
+            ->where('locations.id', $locationModel->id)
+            ->where('locations.company_id', $company->id)
             ->exists();
     }
 

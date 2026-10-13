@@ -30,6 +30,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->alias([
             'company.context' => \App\Http\Middleware\ResolveCompanyContext::class,
+            'location.context' => \App\Http\Middleware\ResolveLocationContext::class,
         ]);
 
         // Trust proxies (for load balancers, App Runner, etc.)

@@ -14,6 +14,8 @@ return new class extends Migration
             $table->foreignId('address_id')->nullable()->constrained();
             $table->string('name');
             $table->string('code')->nullable();
+            $table->integer('sort_order')->default(0);
+            $table->string('color', 32)->nullable();
             $table->string('phone')->nullable();
             $table->string('phone_country_code')->nullable();
             $table->string('email')->nullable();
@@ -21,6 +23,8 @@ return new class extends Migration
             $table->string('timezone')->nullable();
             $table->timestamps();
             $table->softDeletes();
+
+            $table->index(['company_id', 'sort_order']);
         });
     }
 

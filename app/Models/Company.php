@@ -46,7 +46,9 @@ class Company extends BaseModel
 
     public function locations(): HasMany
     {
-        return $this->hasMany(Location::class);
+        return $this->hasMany(Location::class)
+            ->orderBy('sort_order')
+            ->orderBy('name');
     }
 
     public function organizations(): HasMany
@@ -63,5 +65,4 @@ class Company extends BaseModel
     {
         return $this->hasMany(Job::class);
     }
-
 }

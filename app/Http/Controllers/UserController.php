@@ -35,6 +35,7 @@ class UserController extends Controller
             ->with([
                 'memberships.company.address',
                 'memberships.roles.permissions',
+                'locations.address',
             ])
             ->whereHas('memberships', function ($membershipQuery) use ($companyId) {
                 $membershipQuery->where('scope_type', MembershipScope::Company)
@@ -75,6 +76,13 @@ class UserController extends Controller
             'password' => ['required', 'string', 'min:6'],
             'roles' => ['sometimes', 'array'],
             'roles.*' => ['string', 'exists:roles,name'],
+            'location_ids' => ['sometimes', 'array'],
+            'location_ids.*' => [
+                'integer',
+                Rule::exists('locations', 'id')->where(
+                    fn ($query) => $query->where('company_id', $companyId)
+                ),
+            ],
         ]);
 
         $roles = $this->resolveAssignableRoles($validated['roles'] ?? [], $companyId);
@@ -105,11 +113,15 @@ class UserController extends Controller
                 $membership->syncRoles($roles->pluck('name')->all());
             }
 
+            if (array_key_exists('location_ids', $validated)) {
+                $user->locations()->sync($validated['location_ids'] ?? []);
+            }
+
             return $user;
         });
 
         return response()->json(
-            new UserResource($user->load(['memberships.company.address', 'memberships.roles.permissions'])),
+            new UserResource($user->load(['memberships.company.address', 'memberships.roles.permissions', 'locations.address'])),
             201
         );
     }
@@ -119,7 +131,7 @@ class UserController extends Controller
         $this->authorize('view', $user);
 
         return response()->json(
-            new UserResource($user->load(['memberships.company.address', 'memberships.roles.permissions']))
+            new UserResource($user->load(['memberships.company.address', 'memberships.roles.permissions', 'locations.address']))
         );
     }
 
@@ -136,6 +148,13 @@ class UserController extends Controller
             'password' => ['sometimes', 'string', 'min:6'],
             'roles' => ['sometimes', 'array'],
             'roles.*' => ['string', 'exists:roles,name'],
+            'location_ids' => ['sometimes', 'array'],
+            'location_ids.*' => [
+                'integer',
+                Rule::exists('locations', 'id')->where(
+                    fn ($query) => $query->where('company_id', $companyId)
+                ),
+            ],
         ]);
 
         $membership = $user->memberships()
@@ -177,10 +196,14 @@ class UserController extends Controller
             if ($roles->isNotEmpty() || array_key_exists('roles', $validated)) {
                 $membership->syncRoles($roles->pluck('name')->all());
             }
+
+            if (array_key_exists('location_ids', $validated)) {
+                $user->locations()->sync($validated['location_ids'] ?? []);
+            }
         });
 
         return response()->json(
-            new UserResource($user->fresh()->load(['memberships.company.address', 'memberships.roles.permissions']))
+            new UserResource($user->fresh()->load(['memberships.company.address', 'memberships.roles.permissions', 'locations.address']))
         );
     }
 
@@ -264,7 +287,7 @@ class UserController extends Controller
         }
 
         return response()->json(
-            new UserResource($user->fresh()->load(['memberships.company.address', 'memberships.roles.permissions']))
+            new UserResource($user->fresh()->load(['memberships.company.address', 'memberships.roles.permissions', 'locations.address']))
         );
     }
 

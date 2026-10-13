@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Enums\LocationColor;
 use App\Models\Address;
 use App\Models\Company;
 use App\Models\Location;
@@ -58,6 +59,8 @@ class LocationSeeder extends Seeder
                 'company_id' => $company->id,
                 'name' => 'Main Office',
                 'code' => 'HQ',
+                'sort_order' => 0,
+                'color' => LocationColor::Blue->value,
                 'phone' => $company->primary_phone ?? '6025550000',
                 'phone_country_code' => $company->phone_country_code ?? 'US',
                 'email' => $company->primary_email,
@@ -78,6 +81,8 @@ class LocationSeeder extends Seeder
                 'company_id' => $company->id,
                 'name' => 'Equipment Yard',
                 'code' => 'YARD',
+                'sort_order' => 1,
+                'color' => LocationColor::Orange->value,
                 'phone' => $company->primary_phone ?? '6025550000',
                 'phone_country_code' => $company->phone_country_code ?? 'US',
                 'email' => preg_replace('/^contact@/', 'yard@', $company->primary_email ?? 'operations@example.com'),
@@ -85,7 +90,7 @@ class LocationSeeder extends Seeder
                 'timezone' => $company->timezone ?? 'America/Denver',
                 'address' => [
                     'name' => "{$company->name} Equipment Yard",
-                    'line1' => ($baseStreetNumber + 18) . ' Drydown Ave',
+                    'line1' => ($baseStreetNumber + 18).' Drydown Ave',
                     'line2' => null,
                     'city' => $city['city'],
                     'state' => $city['state'],

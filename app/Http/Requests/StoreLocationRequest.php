@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Enums\LocationColor;
 use App\Models\Location;
 use App\Rules\ValidPhoneNumber;
 use App\Support\CompanyContext;
@@ -30,6 +31,8 @@ class StoreLocationRequest extends FormRequest
                     ->where(fn ($query) => $query->where('company_id', $companyId))
                     ->withoutTrashed(),
             ],
+            'sort_order' => ['sometimes', 'nullable', 'integer', 'min:0'],
+            'color' => ['sometimes', 'nullable', Rule::enum(LocationColor::class)],
             'status' => ['required', 'string', 'max:50'],
             'timezone' => ['sometimes', 'nullable', 'string', 'max:100'],
             'email' => ['sometimes', 'nullable', 'email', 'max:255'],

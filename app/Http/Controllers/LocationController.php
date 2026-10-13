@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\ReorderLocationsRequest;
 use App\Http\Requests\StoreLocationRequest;
 use App\Http\Requests\UpdateLocationRequest;
 use App\Http\Resources\LocationResource;
@@ -12,6 +13,7 @@ use App\Support\CompanyContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 class LocationController extends Controller
@@ -24,12 +26,18 @@ class LocationController extends Controller
     {
         $this->authorize('viewAny', Location::class);
 
-        $companyId = app(CompanyContext::class)->companyId();
+        $company = app(CompanyContext::class)->company();
+        $companyId = $company?->id;
+        $user = $request->user();
 
         $query = Location::query()
             ->with('address')
             ->withCount('jobs')
             ->where('company_id', $companyId);
+
+        if ($company && $user?->hasLocationRestrictions($company)) {
+            $query->whereIn('id', $user->accessibleLocationIds($company));
+        }
 
         if ($request->filled('status')) {
             $query->where('status', $request->string('status'));
@@ -44,7 +52,10 @@ class LocationController extends Controller
             });
         }
 
-        $locations = $query->orderBy('name')->paginate(50);
+        $locations = $query
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->paginate(50);
 
         return LocationResource::collection($locations);
     }
@@ -66,6 +77,14 @@ class LocationController extends Controller
                 $address = Address::create($validated['address']);
                 $validated['address_id'] = $address->id;
                 unset($validated['address']);
+            }
+
+            if (blank($validated['color'] ?? null)) {
+                $validated['color'] = $this->nextLocationColor($companyId);
+            }
+
+            if (! array_key_exists('sort_order', $validated) || $validated['sort_order'] === null) {
+                $validated['sort_order'] = $this->nextSortOrder($companyId);
             }
 
             return Location::create([
@@ -111,6 +130,16 @@ class LocationController extends Controller
                 unset($validated['address']);
             }
 
+            if (array_key_exists('color', $validated)) {
+                if (blank($validated['color'])) {
+                    unset($validated['color']);
+                }
+            }
+
+            if (array_key_exists('sort_order', $validated) && $validated['sort_order'] === null) {
+                unset($validated['sort_order']);
+            }
+
             if ($validated !== []) {
                 $location->update($validated);
             }
@@ -128,5 +157,74 @@ class LocationController extends Controller
         $location->delete();
 
         return response()->json(['message' => 'Location deleted successfully.']);
+    }
+
+    public function reorder(ReorderLocationsRequest $request): JsonResponse
+    {
+        $company = app(CompanyContext::class)->company();
+        $user = $request->user();
+
+        abort_unless(
+            $company !== null && $user?->hasPermissionForCompany('edit:locations', $company),
+            403
+        );
+
+        abort_if(
+            $company !== null && $user?->hasLocationRestrictions($company),
+            403,
+            'Location-restricted users cannot reorder company locations.'
+        );
+
+        $locationIds = collect($request->validated('location_ids'))
+            ->map(fn ($id) => (int) $id)
+            ->values();
+
+        $companyLocationIds = Location::query()
+            ->where('company_id', $company->id)
+            ->orderBy('id')
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->values();
+
+        abort_unless(
+            $locationIds->sort()->values()->all() === $companyLocationIds->sort()->values()->all(),
+            422,
+            'The submitted location order must include every location in the company exactly once.'
+        );
+
+        $timestamp = Carbon::now();
+
+        Location::query()->upsert(
+            $locationIds
+                ->values()
+                ->map(fn (int $id, int $index) => [
+                    'id' => $id,
+                    'sort_order' => $index,
+                    'updated_at' => $timestamp,
+                ])
+                ->all(),
+            ['id'],
+            ['sort_order', 'updated_at']
+        );
+
+        return response()->json([
+            'message' => 'Location order updated successfully.',
+        ]);
+    }
+
+    protected function nextSortOrder(int $companyId): int
+    {
+        return (int) Location::query()
+            ->where('company_id', $companyId)
+            ->max('sort_order') + 1;
+    }
+
+    protected function nextLocationColor(int $companyId): string
+    {
+        $locationCount = Location::query()
+            ->where('company_id', $companyId)
+            ->count();
+
+        return Location::DEFAULT_COLORS[$locationCount % count(Location::DEFAULT_COLORS)]->value;
     }
 }

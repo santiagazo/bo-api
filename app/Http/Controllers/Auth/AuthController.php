@@ -36,7 +36,7 @@ class AuthController extends Controller
             $request->session()->regenerate();
 
             return response()->json(
-                new UserResource($request->user()->load(['memberships.company.address', 'memberships.roles.permissions']))
+                new UserResource($request->user()->load(['memberships.company.address', 'memberships.roles.permissions', 'locations.address']))
             );
         }
 
@@ -55,7 +55,7 @@ class AuthController extends Controller
         $token = $user->createToken($request->input('device_name', 'mobile'))->plainTextToken;
 
         return response()->json([
-            'user' => new UserResource($user->load(['memberships.company.address', 'memberships.roles.permissions'])),
+            'user' => new UserResource($user->load(['memberships.company.address', 'memberships.roles.permissions', 'locations.address'])),
             'token' => $token,
         ]);
     }
@@ -100,7 +100,7 @@ class AuthController extends Controller
     public function user(Request $request): JsonResponse
     {
         return response()->json(
-            new UserResource($request->user()->load(['memberships.company.address', 'memberships.roles.permissions']))
+            new UserResource($request->user()->load(['memberships.company.address', 'memberships.roles.permissions', 'locations.address']))
         );
     }
 
@@ -217,7 +217,7 @@ class AuthController extends Controller
             $request->session()->regenerate();
 
             return response()->json([
-                'user' => new UserResource($user->load(['memberships.company.address', 'memberships.roles.permissions'])),
+                'user' => new UserResource($user->load(['memberships.company.address', 'memberships.roles.permissions', 'locations.address'])),
                 'logged_in_via_code' => true, // Frontend uses this to prompt password reset
             ]);
         }
@@ -226,7 +226,7 @@ class AuthController extends Controller
         $token = $user->createToken($request->input('device_name', 'mobile'))->plainTextToken;
 
         return response()->json([
-            'user' => new UserResource($user->load(['memberships.company.address', 'memberships.roles.permissions'])),
+            'user' => new UserResource($user->load(['memberships.company.address', 'memberships.roles.permissions', 'locations.address'])),
             'token' => $token,
             'logged_in_via_code' => true,
         ]);

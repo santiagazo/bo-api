@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Enums\LocationColor;
 use App\Models\Location;
 use App\Rules\ValidPhoneNumber;
 use Illuminate\Foundation\Http\FormRequest;
@@ -31,6 +32,8 @@ class UpdateLocationRequest extends FormRequest
                     ->where(fn ($query) => $query->where('company_id', $location->company_id))
                     ->withoutTrashed(),
             ],
+            'sort_order' => ['sometimes', 'nullable', 'integer', 'min:0'],
+            'color' => ['sometimes', 'nullable', Rule::enum(LocationColor::class)],
             'status' => ['sometimes', 'required', 'string', 'max:50'],
             'timezone' => ['sometimes', 'nullable', 'string', 'max:100'],
             'email' => ['sometimes', 'nullable', 'email', 'max:255'],

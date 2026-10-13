@@ -22,6 +22,7 @@ class LocationPolicy
 
         return $company !== null
             && $this->matchesCompany($location, $company)
+            && $user->canAccessLocation($location, $company)
             && $user->hasPermissionForCompany('view:locations', $company);
     }
 
@@ -38,6 +39,7 @@ class LocationPolicy
 
         return $company !== null
             && $this->matchesCompany($location, $company)
+            && $user->canAccessLocation($location, $company)
             && $user->hasPermissionForCompany('edit:locations', $company);
     }
 
@@ -47,6 +49,7 @@ class LocationPolicy
 
         return $company !== null
             && $this->matchesCompany($location, $company)
+            && $user->canAccessLocation($location, $company)
             && $user->hasPermissionForCompany('delete:locations', $company);
     }
 

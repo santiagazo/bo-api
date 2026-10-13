@@ -2,6 +2,9 @@
 
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\CompanyController;
+use App\Http\Controllers\CustomerController;
+use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\JobController;
 use App\Http\Controllers\LocationController;
 use App\Http\Controllers\OrganizationController;
 use App\Http\Controllers\PermissionController;
@@ -44,6 +47,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/companies/{id}/force', [CompanyController::class, 'forceDelete'])->middleware('company.context:optional');
 
     Route::middleware('company.context')->group(function () {
+        Route::get('/dashboard', [DashboardController::class, 'show'])->middleware('location.context:optional');
+
         // Roles & Permissions
         Route::apiResource('roles', RoleController::class);
         Route::get('/permissions/grouped', [PermissionController::class, 'grouped']);
@@ -54,6 +59,9 @@ Route::middleware('auth:sanctum')->group(function () {
 
         // External organizations
         Route::apiResource('organizations', OrganizationController::class)->except(['restore', 'forceDelete']);
+        Route::apiResource('customers', CustomerController::class)->except(['restore', 'forceDelete']);
+        Route::apiResource('jobs', JobController::class)->except(['restore', 'forceDelete'])->middleware('location.context:optional');
+        Route::post('/locations/reorder', [LocationController::class, 'reorder']);
         Route::apiResource('locations', LocationController::class)->except(['restore', 'forceDelete']);
     });
 });
