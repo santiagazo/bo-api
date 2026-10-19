@@ -49,6 +49,7 @@ return [
         'secret' => env('AWS_SMS_SECRET_ACCESS_KEY', env('AWS_SECRET_ACCESS_KEY')),
         'region' => env('AWS_SMS_REGION', 'us-east-1'),
         'origination_number' => env('AWS_SMS_ORIGINATION_NUMBER'), // Your 10DLC number
+        'verification_domain' => env('AWS_SMS_VERIFICATION_DOMAIN', 'builtox.com'),
         'force_send' => env('AWS_SMS_FORCE_SEND', false),
     ],
 

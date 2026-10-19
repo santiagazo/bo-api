@@ -63,14 +63,16 @@ class AuthController extends Controller
     /**
      * Public registration is intentionally disabled.
      *
-     * Built Ox is an invite-only SaaS. New users should be created through an
+     * jobTack is an invite-only SaaS. New users should be created through a
      * company-scoped invitation/onboarding flow so they never land in the
      * wrong company context accidentally.
      */
     public function register(): JsonResponse
     {
+        $appName = config('app.name', 'jobTack');
+
         return response()->json([
-            'message' => 'Built Ox is invite-only. Ask an administrator to invite you.',
+            'message' => "{$appName} is invite-only. Ask an administrator to invite you.",
         ], 403);
     }
 
