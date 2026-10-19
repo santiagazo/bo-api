@@ -5,7 +5,6 @@ namespace Database\Seeders;
 use App\Models\Company;
 use App\Services\PhoneService;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Str;
 
 class CompanySeeder extends Seeder
 {
@@ -29,6 +28,17 @@ class CompanySeeder extends Seeder
                 ]
             );
         }
+
+        $builtOx = Company::query()->where('slug', 'built-ox-water-damage-pros')->firstOrFail();
+        $builtOx->brandProfile()->updateOrCreate([], [
+            'primary_color' => '#002B5C',
+            'secondary_color' => '#0F172A',
+            'accent_color' => '#E31936',
+            'tagline' => 'Protecting Families. Healthwise. Structurally. Financially.',
+            'university_name' => 'Built Ox University',
+            'mission' => 'To protect people, restore trust, and prepare properties for safe rebuilding through exceptional water mitigation and mold abatement.',
+            'vision' => 'To build a restoration company where people come before procedures, customers feel genuinely cared for, and every team member has the opportunity to grow, thrive, and serve others well.',
+        ]);
     }
 
     protected function companies(): array

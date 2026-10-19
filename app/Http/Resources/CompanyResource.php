@@ -23,6 +23,7 @@ class CompanyResource extends JsonResource
             'currency_code' => $this->currency_code,
             'default_locale' => $this->default_locale,
             'address_id' => $this->address_id,
+            'brand' => CompanyBrandProfileResource::make($this->whenLoaded('brandProfile')),
             'address' => $this->whenLoaded('address', function () {
                 return [
                     'id' => $this->address->id,

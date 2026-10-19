@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Auth\AuthController;
+use App\Http\Controllers\CompanyBrandProfileController;
 use App\Http\Controllers\CompanyController;
 use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\DashboardController;
@@ -41,6 +42,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/companies', [CompanyController::class, 'store'])->middleware('company.context:optional');
     Route::get('/companies/current', [CompanyController::class, 'current'])->middleware('company.context');
     Route::get('/companies/{company}', [CompanyController::class, 'show'])->middleware('company.context:optional');
+    Route::get('/companies/{company}/brand', [CompanyBrandProfileController::class, 'show'])->middleware('company.context:optional');
+    Route::put('/companies/{company}/brand', [CompanyBrandProfileController::class, 'update'])->middleware('company.context:optional');
     Route::put('/companies/{company}', [CompanyController::class, 'update'])->middleware('company.context:optional');
     Route::delete('/companies/{company}', [CompanyController::class, 'destroy'])->middleware('company.context:optional');
     Route::post('/companies/{id}/restore', [CompanyController::class, 'restore'])->middleware('company.context:optional');
