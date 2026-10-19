@@ -7,9 +7,12 @@ use App\Enums\MembershipStatus;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Company extends BaseModel
 {
+    protected $with = ['brandProfile'];
+
     protected $fillable = [
         'name',
         'legal_name',
@@ -28,6 +31,11 @@ class Company extends BaseModel
     public function address(): BelongsTo
     {
         return $this->belongsTo(Address::class);
+    }
+
+    public function brandProfile(): HasOne
+    {
+        return $this->hasOne(CompanyBrandProfile::class);
     }
 
     public function memberships(): HasMany
